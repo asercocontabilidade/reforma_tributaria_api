@@ -33,6 +33,6 @@ class AuthenticationUseCases:
 
         if status_is_authenticated:
             raise ValueError("conta já está sendo utilizada")
-        
+
         token = create_access_token(email=user.email, role=user.role)
         return token, user

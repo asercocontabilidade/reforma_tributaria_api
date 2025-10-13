@@ -2,6 +2,7 @@
 from fastapi import FastAPI
 from application.controllers.autentication_controller import router as auth_router
 from application.controllers.user_controller import router as user_router
+from application.controllers.ncm_controller import router as ncm_router
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="API App Reforma Tributária", version="0.1.0")
@@ -22,6 +23,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(user_router)
+app.include_router(ncm_router)
 
 @app.get("/health")
 def health():
