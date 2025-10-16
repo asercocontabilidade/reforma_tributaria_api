@@ -11,8 +11,12 @@ from importlib.resources import files, as_file  # resolve recurso do pacote
 # -----------------------------
 # Constantes & regex
 # -----------------------------
+# -----------------------------
+# Constantes & regex
+# -----------------------------
 WANTED_COLUMNS = [
     "ITEM",
+    "ANEXO",
     "DESCRIÇÃO DO PRODUTO",
     "NCM",
     "DESCRIÇÃO TIPI",
@@ -22,6 +26,9 @@ WANTED_COLUMNS = [
 IGNORE_SHEETS = {"TIPI"}
 SPACE_RE = re.compile(r"\s+", flags=re.UNICODE)
 NON_ALNUM_RE = re.compile(r"[^0-9A-Za-zÀ-ÿ]+", flags=re.UNICODE)
+ROMAN_RE = re.compile(r"\b(M{0,3}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3}))\b", re.I)
+ANEXO_TOKEN_RE = re.compile(r"\bANEXO(?:S)?\b", re.I)
+DIGIT_RE = re.compile(r"\b(\d{1,4})\b")
 
 # -----------------------------
 # Utils de normalização
@@ -95,6 +102,89 @@ def _detect_header_row(raw: pd.DataFrame, max_scan: int = 10) -> int | None:
     return None
 
 # -----------------------------
+# Helpers para ANEXO
+# -----------------------------
+# -----------------------------
+# Helpers para ANEXO
+# -----------------------------
+_ANEXO_ROMAN = re.compile(
+    r"""
+    \bANEXO\S*         # palavra ANEXO (aceita 'ANEXO', 'ANEXOS', 'ANEXO-IV', etc)
+    [\s:–—\-]*         # separadores opcionais (espaço, dois-pontos, hífen, en-dash)
+    (?P<roman>[IVXLCDM]+)\b   # número romano
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+_ANEXO_DIGIT = re.compile(
+    r"""
+    \bANEXO\S*         # 'ANEXO' (ou variações)
+    [\s:–—\-]*         # separadores opcionais
+    (?P<digits>\d{1,4})\b     # número arábico
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+_STANDALONE_ROMAN = re.compile(r"\b([IVXLCDM]+)\b", re.IGNORECASE)
+
+
+def _extract_anexo_token(sheet_name: str) -> str:
+    """
+    Extrai o número do anexo como ROMANO (I, II, III, IV, ...), a partir do NOME DA ABA.
+    Regras (em ordem):
+      1) 'Anexo' + ROMANO (aceita separadores ':', '-', '–', espaços)
+      2) 'Anexo' + dígito => converte para ROMANO
+      3) Último ROMANO avulso no nome
+      4) Fallback: '-'
+    """
+    name = (sheet_name or "").strip()
+
+    # 1) ANEXO + ROMANO
+    m = _ANEXO_ROMAN.search(name)
+    if m and m.group("roman"):
+        return m.group("roman").upper()
+
+    # 2) ANEXO + dígito -> ROMANO
+    d = _ANEXO_DIGIT.search(name)
+    if d and d.group("digits"):
+        try:
+            return _to_roman(int(d.group("digits")))
+        except Exception:
+            pass
+
+    # 3) Romano isolado (usa o ÚLTIMO encontrado, comum em nomes tipo '... Anexo ... IV')
+    romans = _STANDALONE_ROMAN.findall(name)
+    if romans:
+        return romans[-1].upper()
+
+    # 4) fallback
+    return "-"
+
+def _extract_anexo_label(sheet_name: str) -> str:
+    """
+    Retorna o rótulo completo 'Anexo <ROMANO>' a partir do nome da aba.
+    Se não conseguir inferir, retorna '-'.
+    """
+    token = _extract_anexo_token(sheet_name)  # ex.: 'IV' ou '-'
+    return f"Anexo {token}" if token != "-" else "-"
+
+# conversor simples para romano (1..3999)
+def _to_roman(num: int) -> str:
+    if num <= 0 or num >= 4000:
+        return str(num)
+    vals = [
+        (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
+        (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
+        (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
+    ]
+    out = []
+    for v, sym in vals:
+        while num >= v:
+            out.append(sym)
+            num -= v
+    return "".join(out)
+
+# -----------------------------
 # Cache e carregamento
 # -----------------------------
 class ItemsCache:
@@ -144,30 +234,20 @@ class ItemsCache:
         if mapping:
             df = df.rename(columns=mapping)
 
-        # garante colunas e ordem
         out = pd.DataFrame()
         for c in WANTED_COLUMNS:
             out[c] = df[c] if c in df.columns else ""
 
-        # normalização "visual"
         for c in WANTED_COLUMNS:
             out[c] = out[c].map(normalize_visible)
 
-        # 🔧 CORREÇÃO p/ células mescladas:
-        # 1) converte vazio/whitespace em NaN
-        cols_to_ffill = ["DESCRIÇÃO DO PRODUTO"]  # adicione "ITEM" se também vier mesclado
+        # preenche células mescladas
+        cols_to_ffill = ["DESCRIÇÃO DO PRODUTO"]
         for c in cols_to_ffill:
             if c in out.columns:
                 out[c] = out[c].replace(r"^\s*$", pd.NA, regex=True).ffill()
 
-        # 2) se quiser aplicar em todas as colunas (opcional):
-        # for c in WANTED_COLUMNS:
-        #     out[c] = out[c].replace(r"^\s*$", pd.NA, regex=True).ffill()
-
-        # 3) volta NaN -> ""
         out = out.fillna("")
-
-        # remove linhas totalmente vazias (NCM + descrição vazias)
         empty_mask = (out["NCM"] == "") & (out["DESCRIÇÃO DO PRODUTO"] == "")
         out = out.loc[~empty_mask].reset_index(drop=True)
         return out
@@ -207,19 +287,22 @@ class ItemsCache:
 
             body = body.reset_index(drop=True)
 
-            # Garante mesmo número de colunas entre header e body
+            # colunas iguais entre header/body
             max_cols = max(len(header_vals), body.shape[1])
             while len(header_vals) < max_cols:
                 header_vals.append("")
             if body.shape[1] < max_cols:
                 for k in range(body.shape[1], max_cols):
                     body[k] = ""
-
             body.columns = header_vals
 
+            # >>> NOVO: injeta a coluna ANEXO com o token do nome da aba
+            anexo_label = _extract_anexo_label(name)  # ex.: 'Anexo IV'
+            body["ANEXO"] = anexo_label
+
+            # segue normalização
             before_rows = int(body.shape[0])
             before_cols = list(map(str, body.columns))
-
             normalized = self._normalize_df(body)
             after_rows = int(normalized.shape[0])
 
@@ -259,7 +342,7 @@ class ItemsCache:
         def series_norm(s: pd.Series) -> pd.Series:
             return s.map(lambda x: normalize_for_compare(x, remove_accents=remove_accents))
 
-        search_cols = ["ITEM", "DESCRIÇÃO DO PRODUTO", "NCM", "DESCRIÇÃO TIPI"]
+        search_cols = ["ITEM", "ANEXO", "DESCRIÇÃO DO PRODUTO", "NCM", "DESCRIÇÃO TIPI"]
 
         if not field or field.upper() == "ALL":
             mask = None
@@ -315,7 +398,7 @@ class ItemsCache:
             q_norm = normalize_for_compare(q or "", remove_accents=remove_accents)
             if not q_norm:
                 return None
-            search_cols = ["ITEM", "DESCRIÇÃO DO PRODUTO", "NCM", "DESCRIÇÃO TIPI"]
+            search_cols = ["ITEM", "ANEXO", "DESCRIÇÃO DO PRODUTO", "NCM", "DESCRIÇÃO TIPI"]
             # ALL -> busca em todas as colunas alvo
             if not field or field.upper() == "ALL":
                 m = None
@@ -351,6 +434,7 @@ def to_api_rows(df_page: pd.DataFrame) -> list[dict]:
     for _, r in df_page.iterrows():
         out.append({
             "item": r.get("ITEM", ""),
+            "anexo": r.get("ANEXO", ""),  # 👈 NOVO
             "descricao_do_produto": r.get("DESCRIÇÃO DO PRODUTO", ""),
             "ncm": r.get("NCM", ""),
             "descricao_tipi": r.get("DESCRIÇÃO TIPI", ""),

@@ -7,6 +7,7 @@ from pydantic.config import ConfigDict  # pydantic v2
 # allowed filter fields
 FilterField = Literal[
     "ITEM",
+    "ANEXO",
     "DESCRIÇÃO DO PRODUTO",
     "NCM",
     "DESCRIÇÃO TIPI",
@@ -17,6 +18,7 @@ FilterField = Literal[
 class ItemRow(BaseModel):
     # nomes internos pythonic:
     item: str = Field(..., serialization_alias="ITEM")
+    anexo: str = Field(alias="ANEXO")
     descricao_do_produto: str = Field(..., serialization_alias="DESCRIÇÃO DO PRODUTO")
     ncm: str = Field(..., serialization_alias="NCM")
     descricao_tipi: str = Field(..., serialization_alias="DESCRIÇÃO TIPI")
@@ -33,16 +35,4 @@ class SearchResponse(BaseModel):
     data: List[ItemRow]
 
     model_config = ConfigDict(populate_by_name=True)
-
-
-# opcional: se você usa FilterField aqui
-from typing import Literal
-
-FilterField = Literal[
-    "ITEM",
-    "DESCRIÇÃO DO PRODUTO",
-    "NCM",
-    "DESCRIÇÃO TIPI",
-    "ALL",
-]
 

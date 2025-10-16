@@ -24,12 +24,12 @@ class AuthenticationUseCases:
         status_is_authenticated = self.repo_user.get_status_is_authenticated(email)
         print(status_is_authenticated)
 
+        if not user:
+            raise ValueError("Credenciais Inválidas")
+
         if not status_is_authenticated:
             user_auth = self.repo.get_user_by_email(email)
             self.repo_user.update_status_is_authenticated(user=user_auth, is_authenticated=True)
-
-        if not user:
-            raise ValueError("Credenciais Inválidas")
 
         if status_is_authenticated:
             raise ValueError("conta já está sendo utilizada")
