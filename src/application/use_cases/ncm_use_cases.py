@@ -230,26 +230,49 @@ class ItemsCache:
         return (self._df is None) or (self._mtime != mtime)
 
     def _normalize_df(self, df: pd.DataFrame) -> pd.DataFrame:
+        # 1) Renomeia para nomes canônicos
         mapping = map_columns_to_canonical(list(df.columns))
         if mapping:
             df = df.rename(columns=mapping)
 
+        # 2) Para cada coluna canônica desejada, escolhe/une as colunas homônimas
         out = pd.DataFrame()
         for c in WANTED_COLUMNS:
-            out[c] = df[c] if c in df.columns else ""
+            if c not in df.columns:
+                out[c] = ""  # não existe na origem -> cria vazia
+                continue
 
+            # Todas as colunas com o MESMO nome canônico (ex.: duas "ITEM")
+            same_named_cols = [col for col in df.columns if col == c]
+
+            if len(same_named_cols) == 1:
+                out[c] = df[same_named_cols[0]]
+            else:
+                # 3) Coalesce: pega a 1ª não-vazia por linha entre as duplicadas
+                # (vazios: "", "  ", etc.)
+                merged = (
+                    df[same_named_cols]
+                    .replace(r"^\s*$", pd.NA, regex=True)
+                    .bfill(axis=1)  # preenche da esquerda p/ direita
+                    .iloc[:, 0]  # 1ª coluna "resolvida"
+                )
+                out[c] = merged
+
+        # 4) Normalização de visibilidade (trim, espaçamento, etc.)
         for c in WANTED_COLUMNS:
             out[c] = out[c].map(normalize_visible)
 
-        # preenche células mescladas
-        cols_to_ffill = ["DESCRIÇÃO DO PRODUTO"]
+        # 5) Preenche células mescladas/linhas subsequentes onde faz sentido
+        #    (mantém seu comportamento anterior e adiciona ITEM como reforço)
+        cols_to_ffill = ["DESCRIÇÃO DO PRODUTO", "ITEM"]
         for c in cols_to_ffill:
             if c in out.columns:
                 out[c] = out[c].replace(r"^\s*$", pd.NA, regex=True).ffill()
 
-        out = out.fillna("")
-        empty_mask = (out["NCM"] == "") & (out["DESCRIÇÃO DO PRODUTO"] == "")
+        # 6) Remove linhas claramente vazias
+        empty_mask = (out.get("NCM", "") == "") & (out.get("DESCRIÇÃO DO PRODUTO", "") == "")
         out = out.loc[~empty_mask].reset_index(drop=True)
+
         return out
 
     def _load_excel(self) -> pd.DataFrame:
@@ -433,13 +456,13 @@ def to_api_rows(df_page: pd.DataFrame) -> list[dict]:
     out = []
     for _, r in df_page.iterrows():
         out.append({
-            "item": r.get("ITEM", ""),
-            "anexo": r.get("ANEXO", ""),  # 👈 NOVO
-            "descricao_do_produto": r.get("DESCRIÇÃO DO PRODUTO", ""),
-            "ncm": r.get("NCM", ""),
-            "descricao_tipi": r.get("DESCRIÇÃO TIPI", ""),
-            "cst_ibs_e_cbs": r.get("CST IBS E CBS", ""),
-            "cclasstrib": r.get("CCLASSTRIB", ""),
+            "ITEM": r.get("ITEM", ""),
+            "ANEXO": r.get("ANEXO", ""),
+            "DESCRIÇÃO DO PRODUTO": r.get("DESCRIÇÃO DO PRODUTO", ""),
+            "NCM": r.get("NCM", ""),
+            "DESCRIÇÃO TIPI": r.get("DESCRIÇÃO TIPI", ""),
+            "CST IBS E CBS": r.get("CST IBS E CBS", ""),
+            "CCLASSTRIB": r.get("CCLASSTRIB", ""),
         })
     return out
 

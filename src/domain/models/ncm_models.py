@@ -15,24 +15,26 @@ FilterField = Literal[
 ]
 
 
-class ItemRow(BaseModel):
-    # nomes internos pythonic:
-    item: str = Field(..., serialization_alias="ITEM")
-    anexo: str = Field(alias="ANEXO")
-    descricao_do_produto: str = Field(..., serialization_alias="DESCRIÇÃO DO PRODUTO")
-    ncm: str = Field(..., serialization_alias="NCM")
-    descricao_tipi: str = Field(..., serialization_alias="DESCRIÇÃO TIPI")
-    cst_ibs_e_cbs: str = Field(..., serialization_alias="CST IBS E CBS")
-    cclasstrib: str = Field(..., serialization_alias="CCLASSTRIB")
-
-    model_config = ConfigDict(populate_by_name=True)  # permite usar nomes internos
-
+class RowItem(BaseModel):
+    ITEM: Optional[str] = None
+    ANEXO: Optional[str] = None
+    DESCRIÇÃO_DO_PRODUTO: Optional[str] = None
+    NCM: Optional[str] = None
+    DESCRIÇÃO_TIPI: Optional[str] = None
+    CST_IBS_E_CBS: Optional[float] = None
+    CCLASSTRIB: Optional[str] = None
+    DESCRIÇÃO_COMPLETA: Optional[str] = None
+    REDUÇÃO_IBS: Optional[float] = None
+    REDUÇÃO_CBS: Optional[float] = None
 
 class SearchResponse(BaseModel):
     page: int
     total_pages: int
     total_items: int
-    data: List[ItemRow]
+    data: List[dict]  # mantém como antes
 
-    model_config = ConfigDict(populate_by_name=True)
 
+class CstDetailsResponse(BaseModel):
+    reduction_percent_ibs: Optional[str] = None
+    reduction_percent_cbs: Optional[str] = None
+    legal_basis: str = ""
