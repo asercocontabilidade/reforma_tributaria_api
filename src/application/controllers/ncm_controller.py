@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query, Depends, HTTPException
 from domain.models.ncm_models import SearchResponse, FilterField
-from application.use_cases.ncm_use_cases import ItemsCache, to_api_rows
+from application.use_cases.ncm_use_cases import ItemsCache, to_api_rows, to_api_details
 
 router = APIRouter(prefix="/itens", tags=["Items"])
 
@@ -24,6 +24,8 @@ def search_items(
     """
     try:
         df_filtered = cache.search_multi([(field, q), (field2, q2)])
+        # >>> sanitize contra pd.NA para não quebrar Pydantic
+        df_filtered = df_filtered.astype(object).where(df_filtered.notna(), "")
     except FileNotFoundError:
         raise HTTPException(status_code=500, detail="Excel file not found in package.")
     except Exception as exc:
@@ -43,3 +45,39 @@ def search_items(
         "total_items": total_items,
         "data": to_api_rows(df_page),
     }
+
+
+# ---------------------------
+# NOVO ENDPOINT: /itens/details
+# ---------------------------
+@router.get(
+    "/details",
+    summary="Retorna DESCRIÇÃO COMPLETA, IBS e CBS por NCM (ou ITEM). Ignora aba de Exceções.",
+)
+def get_details(
+    ncm: str = Query("", description="Código NCM para busca exata (recomendado)"),
+    item: str = Query("", description="ITEM alternativo se NCM não for informado"),
+    cache: ItemsCache = Depends(get_cache),
+):
+    """
+    Regras:
+    - Se 'ncm' informado: busca por igualdade (normalizada) em NCM.
+    - Senão, se 'item' informado: busca por igualdade (normalizada) em ITEM.
+    - Retorna DESCRIÇÃO COMPLETA, IBS e CBS; inclui também chaves de contexto (ANEXO, ITEM, NCM, DESCRIÇÃO DO PRODUTO).
+    - Ignora a(s) aba(s) de Exceções.
+    """
+    if not (ncm or item):
+        raise HTTPException(status_code=400, detail="Informe 'ncm' ou 'item' para pesquisar.")
+
+    try:
+        df = cache.find_details(ncm=ncm, item=item)
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="Excel file not found in package.")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Details error: {exc}")
+
+    return {
+        "count": int(df.shape[0]),
+        "data": to_api_details(df),
+    }
+
