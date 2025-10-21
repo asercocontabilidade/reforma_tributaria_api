@@ -5,6 +5,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 from enum import Enum as PyEnum
 from sqlalchemy import event
 from infrastructure.database import Base
+from zoneinfo import ZoneInfo
+
+BRAZIL_TZ = ZoneInfo("America/Sao_Paulo")
 
 class RoleType(str, PyEnum):
     administrator = "administrator"
@@ -37,4 +40,4 @@ def update_status_changed_at(mapper, connection, target: User):
     hist = state.attrs.is_active.history
 
     if hist.has_changes():  # só se o valor realmente mudou
-        target.status_changed_at = datetime.utcnow()
+        target.status_changed_at = datetime.now(BRAZIL_TZ)
