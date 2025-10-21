@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Query, Depends, HTTPException
 from domain.models.ncm_models import SearchResponse, FilterField
 from application.use_cases.ncm_use_cases import ItemsCache, to_api_rows, to_api_details
+from domain.entities.user_classes import UserEntity
+from application.use_cases.security import get_current_user, require_roles
 
 router = APIRouter(prefix="/itens", tags=["Items"])
 
@@ -16,6 +18,7 @@ def search_items(
     page: int = Query(1, ge=1, description="Page number (1-based)"),
     limit: int = Query(15, ge=1, le=200, description="Page size (default 15)"),
     cache: ItemsCache = Depends(get_cache),
+    current: UserEntity = Depends(get_current_user)
 ):
     """
     Suporta até **dois** filtros combinados com AND.

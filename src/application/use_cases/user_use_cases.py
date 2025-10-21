@@ -21,3 +21,6 @@ class UserUseCases:
 
         updated = self.repo.update_status_is_authenticated(user, is_authenticated)
         return updated
+
+    def find_all_users(self):
+        return self.repo.find_all_users()

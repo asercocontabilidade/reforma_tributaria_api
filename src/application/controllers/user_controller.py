@@ -5,6 +5,7 @@ from domain.models.user_models import UserRead
 from application.use_cases.user_use_cases import UserUseCases
 from domain.entities.user_entity import RoleType
 from application.use_cases.security import require_roles
+from typing import List
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -43,3 +44,9 @@ def change_user_status(
     use_case = UserUseCases(db)
     user = use_case.change_user_is_authenticated_status(user_id=user_id, is_authenticated=payload["is_authenticated"])
     return user
+
+@router.get("/find_all_users", response_model=List[UserRead])
+def find_all_users(db: Session = Depends(get_db)):
+    use_case = UserUseCases(db)
+
+    return use_case.find_all_users()

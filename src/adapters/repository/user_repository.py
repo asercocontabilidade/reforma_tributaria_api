@@ -27,5 +27,8 @@ class UserRepository:
 
     def get_status_is_authenticated(self, email: str):
         query = select(User.is_authenticated).where(User.email == email)
-
         return self.db.execute(query).scalar()
+
+    def find_all_users(self):
+        query = select(User)
+        return self.db.execute(query).scalars().all()

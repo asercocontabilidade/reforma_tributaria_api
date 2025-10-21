@@ -7,13 +7,22 @@ from domain.models.user_models import UserCreate, UserRead, LoginRequest, Token,
 from domain.entities.user_entity import RoleType
 from domain.entities.user_classes import UserEntity
 from application.use_cases.autentication_use_cases import AuthenticationUseCases
-from application.use_cases.security import get_current_user, require_roles
+from application.use_cases.security import (
+    get_current_user, require_roles,
+    create_access_token, create_refresh_token, decode_token
+)
 from application.utils.utils import get_client_ip
 from domain.entities.user_entity import User
+from infrastructure.security_docs import swagger_bearer_auth
+
+REFRESH_COOKIE_NAME = "rt"  # nome do cookie do refresh
+REFRESH_COOKIE_PATH = "/auth"  # limite de escopo
+REFRESH_COOKIE_SECURE = True  # mude para True em produção com HTTPS
+REFRESH_COOKIE_SAMESITE = "Lax"
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-@router.post("/register", response_model=UserRead, status_code=201)
+@router.post("/register", response_model=UserRead, status_code=201, summary="Search items (auth required)", dependencies=[swagger_bearer_auth()])
 def register(payload: UserCreate,request: Request, db: Session = Depends(get_db)):
     uc = AuthenticationUseCases(db)
 
@@ -21,6 +30,8 @@ def register(payload: UserCreate,request: Request, db: Session = Depends(get_db)
     # existing = db.query(User).filter(User.ip_address == ip_address_local).first()
 
     ip_address_local = payload.ip_address
+
+    """
     existing = db.query(User).filter(User.ip_address == ip_address_local).first()
 
     if existing:
@@ -29,6 +40,7 @@ def register(payload: UserCreate,request: Request, db: Session = Depends(get_db)
             status_code=status.HTTP_409_CONFLICT,
             detail="IP já cadastrado para outro usuário."
         )
+    """
 
     try:
 
@@ -85,6 +97,22 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=msg
             )
+
+@router.post("/refresh")
+def refresh_token(request: Request, db: Session = Depends(get_db)):
+    rt = request.cookies.get(REFRESH_COOKIE_NAME)
+    if not rt:
+        raise HTTPException(status_code=401, detail="Missing refresh token")
+
+    data = decode_token(rt)  # valida exp/assinatura; lança 401 se inválido/expirado
+    user: User | None = db.query(User).filter(User.email == data.sub).first()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+
+    # (opcional) você pode rotacionar o refresh aqui emitindo um novo cookie
+    at = create_access_token(email=user.email, role=user.role)
+    return {"access_token": at, "token_type": "bearer"}
+
 
 @router.get("/me", response_model=UserRead)
 def me(current: UserEntity = Depends(get_current_user)):
