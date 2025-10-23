@@ -14,6 +14,8 @@ from application.use_cases.security import (
 from application.utils.utils import get_client_ip
 from domain.entities.user_entity import User
 from infrastructure.security_docs import swagger_bearer_auth
+import logging
+from sqlalchemy.exc import IntegrityError, DataError
 
 REFRESH_COOKIE_NAME = "rt"  # nome do cookie do refresh
 REFRESH_COOKIE_PATH = "/auth"  # limite de escopo
@@ -22,13 +24,21 @@ REFRESH_COOKIE_SAMESITE = "Lax"
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+logger = logging.getLogger(__name__)
+
+def _dup_key_on(err: IntegrityError, needle: str) -> bool:
+    """Detecta qual constraint/coluna disparou o 1062 do MySQL."""
+    msg = str(getattr(err, "orig", err))
+    return needle in msg
+
 @router.post("/register", response_model=UserRead, status_code=201, summary="Search items (auth required)", dependencies=[swagger_bearer_auth()])
-def register(payload: UserCreate,request: Request, db: Session = Depends(get_db), current: UserEntity = Depends(get_current_user)):
+def register(payload: UserCreate,
+             request: Request, db: Session = Depends(get_db),
+             current: UserEntity = Depends(get_current_user)
+             ):
     uc = AuthenticationUseCases(db)
 
     # ip_address_local = get_client_ip(request)
-    # existing = db.query(User).filter(User.ip_address == ip_address_local).first()
-
     ip_address_local = payload.ip_address
 
     """
@@ -43,9 +53,10 @@ def register(payload: UserCreate,request: Request, db: Session = Depends(get_db)
     """
 
     try:
-
-        if ip_address_local is None:
-            ip_address_local = None
+        # saneamento básico: não grave o literal "string"
+        if isinstance(ip_address_local, str) and ip_address_local.strip().lower() == "string":
+            if ip_address_local is None:
+                ip_address_local = None
 
         user = uc.register_user(
             email=payload.email,
@@ -53,20 +64,59 @@ def register(payload: UserCreate,request: Request, db: Session = Depends(get_db)
             ip_address=ip_address_local,
             password=payload.password,
             full_name=payload.full_name,
-            role=RoleType(payload.role),
+            role=RoleType(payload.role),  # pode lançar ValueError se role inválido
+            company_id=payload.company_id,  # pode ser None
         )
 
         return UserRead(
             id=user.id,
             email=user.email,
             cnpj_cpf=user.cnpj_cpf,
-            ip_address=ip_address_local,
+            ip_address=user.ip_address,  # preferir o valor vindo do ORM
             full_name=user.full_name,
             role=user.role.value,
             is_active=user.is_active,
+            company_id=user.company_id,
         )
+
+    except IntegrityError as e:
+        # Se você controlar a sessão aqui, lembre de dar rollback:
+        # db.rollback()
+
+        # 1062 (duplicado) em chaves comuns
+        if _dup_key_on(e, "uq_users_ip_address") or _dup_key_on(e, "ip_address"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"field": "ip_address", "msg": "Endereço IP já cadastrado."},
+            )
+        if _dup_key_on(e, "uq_users_email") or _dup_key_on(e, "email"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"field": "email", "msg": "E-mail já cadastrado."},
+            )
+        if _dup_key_on(e, "uq_users_cnpj_cpf") or _dup_key_on(e, "cnpj_cpf"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"field": "cnpj_cpf", "msg": "CNPJ/CPF já cadastrado."},
+            )
+
+        logger.exception("Integrity error ao registrar usuário")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Violação de integridade nos dados informados."
+        )
+
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        # pega, por exemplo, RoleType(payload.role) inválido
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    except DataError as e:
+        # erros de tamanho de campo, tipos numéricos fora do range etc.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Dados inválidos para um dos campos.")
+
+    except Exception as e:
+        logger.exception("Falha inesperada ao registrar usuário")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Erro interno do servidor.")
 
 @router.post("/login", response_model=LoginResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):

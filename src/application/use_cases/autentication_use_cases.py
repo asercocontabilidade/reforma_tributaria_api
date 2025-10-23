@@ -14,9 +14,9 @@ class AuthenticationUseCases:
         self.repo_user = UserRepository(db)
 
     def register_user(
-        self, *, email: str, cnpj_cpf: str, ip_address: str | None, password: str, full_name: str | None, role: RoleType
+        self, *, email: str, cnpj_cpf: str, ip_address: str | None, password: str, full_name: str | None, role: RoleType, company_id: int | None
     ) -> UserEntity:
-        return self.repo.create_user(email=email,cnpj_cpf=cnpj_cpf, ip_address=ip_address, password=password, full_name=full_name, role=role)
+        return self.repo.create_user(email=email,cnpj_cpf=cnpj_cpf, ip_address=ip_address, password=password, full_name=full_name, role=role, company_id=company_id)
 
     def login(self, *, email: str, password: str) -> Tuple[str, UserEntity]:
         user = self.repo.verify_credentials(email=email, password=password)

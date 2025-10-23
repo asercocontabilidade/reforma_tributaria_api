@@ -24,3 +24,6 @@ class UserUseCases:
 
     def find_all_users(self):
         return self.repo.find_all_users()
+
+    def update_user_company(self, company_id, user_id):
+        self.repo.update_user_company(company_id, user_id)

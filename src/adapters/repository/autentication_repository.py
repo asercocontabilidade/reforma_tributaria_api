@@ -19,7 +19,7 @@ class AuthenticationRepository:
         return self.db.query(UserORM).filter(UserORM.email == email).first()
 
     # Commands
-    def create_user(self, *, email: str, cnpj_cpf: str, ip_address: str | None, password: str, full_name: str | None, role: RoleType) -> UserEntity:
+    def create_user(self, *, email: str, cnpj_cpf: str, ip_address: str | None, password: str, full_name: str | None, role: RoleType, company_id: int | None) -> UserEntity:
         if self.get_user_by_email(email):
             raise ValueError("Email already registered")
 
@@ -34,6 +34,7 @@ class AuthenticationRepository:
             full_name=full_name,
             role=role,
             is_active=True,
+            company_id=company_id,
         )
         self.db.add(user)
         self.db.commit()
@@ -47,6 +48,7 @@ class AuthenticationRepository:
             full_name=user.full_name,
             role=role,
             is_active=user.is_active,
+            company_id=user.company_id,
         )
 
     def verify_credentials(self, *, email: str, password: str) -> Optional[UserEntity]:
@@ -63,4 +65,5 @@ class AuthenticationRepository:
             full_name=user.full_name,
             role=user.role,
             is_active=user.is_active,
+            company_id=user.company_id,
         )

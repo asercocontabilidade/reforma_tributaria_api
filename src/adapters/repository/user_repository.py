@@ -1,7 +1,7 @@
 from datetime import datetime
 from sqlalchemy.orm import Session
 from domain.entities.user_entity import User
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 class UserRepository:
     def __init__(self, db: Session):
@@ -32,3 +32,9 @@ class UserRepository:
     def find_all_users(self):
         query = select(User)
         return self.db.execute(query).scalars().all()
+
+    def update_user_company(self, company_id, user_id):
+        query = update(User).where(User.id == user_id).values(company_id=company_id)
+        print("teste")
+        self.db.execute(query)
+        self.db.commit()

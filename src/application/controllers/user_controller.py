@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from infrastructure.database import get_db
-from domain.models.user_models import UserRead
+from domain.models.user_models import UserRead, UserUpdateCompany
 from application.use_cases.user_use_cases import UserUseCases
 from domain.entities.user_entity import RoleType
 from application.use_cases.security import require_roles
@@ -55,3 +55,14 @@ def find_all_users(db: Session = Depends(get_db), current: UserEntity = Depends(
     use_case = UserUseCases(db)
 
     return use_case.find_all_users()
+
+@router.post("/update_user_company/{company_id}/{user_id}", status_code=status.HTTP_201_CREATED)
+def update_user_company(
+        company_id: int,
+        user_id: int,
+        db: Session = Depends(get_db),
+        current: UserEntity = Depends(get_current_user)
+    ):
+
+    use_case = UserUseCases(db)
+    use_case.update_user_company(company_id, user_id)

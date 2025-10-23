@@ -15,3 +15,4 @@ class UserEntity:
     full_name: str | None
     role: RoleType
     is_active: bool
+    company_id: int | None

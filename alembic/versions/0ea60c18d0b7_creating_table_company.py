@@ -1,4 +1,4 @@
-"""creating table customer
+"""creating table company
 
 Revision ID: 0ea60c18d0b7
 Revises: 63f4ecb2683a
@@ -20,9 +20,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     op.create_table(
-        'customer',
+        'company',
         sa.Column('id', sa.Integer(), primary_key=True),
-        sa.Column('name', sa.String(length=255), nullable=True),
+        sa.Column('customer_name', sa.String(length=255), nullable=True),
         sa.Column('role', sa.Enum('pro', 'basic', name='roletype'), nullable=False),
         sa.Column('company_name', sa.String(length=255), nullable=True),
         sa.Column('phone_number', sa.String(length=255), nullable=True),
@@ -32,8 +32,8 @@ def upgrade() -> None:
         sa.Column('cnae_company', sa.String(length=255), nullable=True),
         sa.Column('tax_regime', sa.String(length=255), nullable=True),
         sa.Column('erp_code', sa.String(length=50), nullable=True),
-        sa.Column('user_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=True)
+        sa.Column("monthly_value", sa.Float(), nullable=True),
     )
 
 def downgrade() -> None:
-    op.drop_table('customer')
+    op.drop_table('company')

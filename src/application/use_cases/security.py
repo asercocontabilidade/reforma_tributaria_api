@@ -23,7 +23,7 @@ http_bearer = HTTPBearer(auto_error=False)
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "change_this_in_prod")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "1"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.environ.get("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 JWT_LEEWAY_SECONDS = int(os.environ.get("JWT_LEEWAY_SECONDS", "30"))
 
@@ -74,7 +74,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
     role_value = user.role.value if hasattr(user.role, "value") else user.role
-    return UserEntity(id=user.id, email=user.email, full_name=user.full_name, role=RoleType(role_value), is_active=user.is_active, cnpj_cpf=user.cnpj_cpf, ip_address=user.ip_address)
+    return UserEntity(id=user.id, email=user.email, full_name=user.full_name, role=RoleType(role_value), is_active=user.is_active, cnpj_cpf=user.cnpj_cpf, ip_address=user.ip_address, company_id=user.company_id)
 
 def require_roles(*allowed: RoleType):
     def _checker(current: UserEntity = Depends(get_current_user)) -> UserEntity:

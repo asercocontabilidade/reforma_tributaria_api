@@ -12,6 +12,7 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=8)
     full_name: str | None = None
     role: RoleLiteral = "client"
+    company_id: int | None = None
 
 class UserRead(BaseModel):
     id: int
@@ -22,6 +23,7 @@ class UserRead(BaseModel):
     role: RoleLiteral
     is_active: bool
     status_changed_at: datetime | None = None
+    company_id: int | None = None
 
     class Config:
         from_attributes = True
@@ -44,3 +46,6 @@ class LoginResponse(BaseModel):
 class TokenPayload(BaseModel):
     sub: str  # email
     role: RoleLiteral
+
+class UserUpdateCompany(BaseModel):
+    company_id: int

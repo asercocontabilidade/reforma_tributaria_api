@@ -1,11 +1,14 @@
 # models.py
-from sqlalchemy import String, Enum as SAEnum, Boolean, DateTime, func, inspect
+from sqlalchemy import String, Enum as SAEnum, ForeignKey, Boolean, DateTime, func, inspect
 from datetime import datetime
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import (
+    Mapped, mapped_column, relationship
+)
 from enum import Enum as PyEnum
 from sqlalchemy import event
 from infrastructure.database import Base
 from zoneinfo import ZoneInfo
+from typing import Optional
 
 BRAZIL_TZ = ZoneInfo("America/Sao_Paulo")
 
@@ -31,6 +34,11 @@ class User(Base):
     status_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    company_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("company.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    company: Mapped[Optional["Company"]] = relationship("Company", back_populates="users")
 
 
 @event.listens_for(User, "before_update")
