@@ -2,8 +2,11 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel
 from typing import Literal
+from enum import Enum
 
-RoleLiteral = Literal["basic", "pro"]
+class RoleType(str, Enum):
+    administrator = "basic"
+    client = "pro"
 
 class CompanyCreate(BaseModel):
     customer_name: str | None = None
@@ -20,7 +23,7 @@ class CompanyCreate(BaseModel):
 class CompanyRead(BaseModel):
     id: int
     customer_name: str | None = None
-    role: RoleLiteral
+    role: RoleType
     company_name: str | None = None
     phone_number: str | None = None
     address: str | None = None

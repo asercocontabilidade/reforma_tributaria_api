@@ -2,8 +2,11 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import Literal
 from datetime import datetime
+from enum import Enum
 
-RoleLiteral = Literal["administrator", "client"]
+class RoleType(str, Enum):
+    administrator = "administrator"
+    client = "client"
 
 class UserCreate(BaseModel):
     email: EmailStr
@@ -11,7 +14,7 @@ class UserCreate(BaseModel):
     ip_address: str | None = None
     password: str = Field(min_length=8)
     full_name: str | None = None
-    role: RoleLiteral = "client"
+    role: RoleType = "client"
     company_id: int | None = None
 
 class UserRead(BaseModel):
@@ -20,7 +23,7 @@ class UserRead(BaseModel):
     cnpj_cpf: str
     ip_address: str | None = None
     full_name: str | None = None
-    role: RoleLiteral
+    role: RoleType
     is_active: bool
     status_changed_at: datetime | None = None
     company_id: int | None = None
@@ -45,7 +48,7 @@ class LoginResponse(BaseModel):
 
 class TokenPayload(BaseModel):
     sub: str  # email
-    role: RoleLiteral
+    role: RoleType
 
 class UserUpdateCompany(BaseModel):
     company_id: int
