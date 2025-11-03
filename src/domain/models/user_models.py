@@ -52,3 +52,8 @@ class TokenPayload(BaseModel):
 
 class UserUpdateCompany(BaseModel):
     company_id: int
+
+class UserUpdateConfig(BaseModel):
+    id: int
+    password: str
+    full_name: str

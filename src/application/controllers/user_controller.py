@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from infrastructure.database import get_db
-from domain.models.user_models import UserRead, UserUpdateCompany
+from domain.models.user_models import UserRead, UserUpdateCompany, UserUpdateConfig
 from application.use_cases.user_use_cases import UserUseCases
 from domain.entities.user_entity import RoleType
 from application.use_cases.security import require_roles
@@ -66,3 +66,21 @@ def update_user_company(
 
     use_case = UserUseCases(db)
     use_case.update_user_company(company_id, user_id)
+
+@router.post("/update_user_config", status_code=204)
+def update_user_config(
+        user_config: UserUpdateConfig,
+        db: Session = Depends(get_db),
+        current: UserEntity = Depends(get_current_user)
+):
+    use_case = UserUseCases(db)
+    return use_case.update_user_config(user_config)
+
+@router.get("/get_user_by_id/{user_id}",response_model=UserRead)
+def get_user_by_id(
+        user_id: int,
+        db: Session = Depends(get_db),
+        current: UserEntity = Depends(get_current_user)
+):
+    use_case = UserUseCases(db)
+    return use_case.get_user_by_id(user_id)

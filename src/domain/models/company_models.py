@@ -10,6 +10,7 @@ class RoleType(str, Enum):
 
 class CompanyCreate(BaseModel):
     customer_name: str | None = None
+    role: RoleType
     company_name: str | None = None
     phone_number: str | None = None
     address: str | None = None

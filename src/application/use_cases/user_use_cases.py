@@ -27,3 +27,9 @@ class UserUseCases:
 
     def update_user_company(self, company_id, user_id):
         self.repo.update_user_company(company_id, user_id)
+
+    def update_user_config(self, user_config):
+        self.repo.update_user_config(user_config)
+
+    def get_user_by_id(self, user_id):
+        return self.repo.get_user_by_id(user_id)

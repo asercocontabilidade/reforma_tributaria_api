@@ -2,6 +2,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from domain.entities.user_entity import User
 from sqlalchemy import select, update
+from application.use_cases.security import hash_password
 
 class UserRepository:
     def __init__(self, db: Session):
@@ -38,3 +39,12 @@ class UserRepository:
         print("teste")
         self.db.execute(query)
         self.db.commit()
+
+    def update_user_config(self, user_config):
+        query = update(User).where(User.id == user_config.id).values(hashed_password=hash_password(user_config.password), full_name=user_config.full_name)
+        self.db.execute(query)
+        self.db.commit()
+
+    def get_user_by_id(self, user_id):
+        query = select(User).where(User.id == user_id)
+        return self.db.execute(query).scalar()
