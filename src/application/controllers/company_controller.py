@@ -21,3 +21,12 @@ def find_all_company(db: Session = Depends(get_db),
                      ):
     uc = CompanyUseCases(db)
     return uc.find_all_company()
+
+@router.get("/find_company_by_company_id/{company_id}", response_model=CompanyRead)
+def find_company_by_company_id(
+        company_id: int,
+        db: Session = Depends(get_db),
+        current: UserEntity = Depends(get_current_user)
+):
+    uc = CompanyUseCases(db)
+    return uc.find_company_by_company_id(company_id)

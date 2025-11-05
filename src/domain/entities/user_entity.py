@@ -15,6 +15,7 @@ BRAZIL_TZ = ZoneInfo("America/Sao_Paulo")
 class RoleType(str, PyEnum):
     administrator = "administrator"
     client = "client"
+    support = "support"
 
 
 class User(Base):

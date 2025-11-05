@@ -7,6 +7,7 @@ from enum import Enum
 class RoleType(str, Enum):
     administrator = "administrator"
     client = "client"
+    support = "support"
 
 class UserCreate(BaseModel):
     email: EmailStr
@@ -27,9 +28,17 @@ class UserRead(BaseModel):
     is_active: bool
     status_changed_at: datetime | None = None
     company_id: int | None = None
+    is_authenticated: bool | None = None
 
     class Config:
         from_attributes = True
+
+class UserUpdate(BaseModel):
+    id: int
+    email: EmailStr
+    full_name: str
+    cnpj_cpf: str
+    role: RoleType
 
 class LoginRequest(BaseModel):
     email: EmailStr

@@ -5,6 +5,7 @@ from enum import Enum
 class RoleType(str, Enum):
     administrator = "administrator"
     client = "client"
+    support = "support"
 
 @dataclass(frozen=True)
 class UserEntity:

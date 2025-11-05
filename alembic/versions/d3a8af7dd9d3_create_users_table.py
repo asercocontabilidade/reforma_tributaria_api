@@ -27,7 +27,7 @@ def upgrade() -> None:
     sa.Column('cnpj_cpf', sa.String(length=255), nullable=False),
     sa.Column('hashed_password', sa.String(length=255), nullable=False),
     sa.Column('full_name', sa.String(length=255), nullable=True),
-    sa.Column('role', sa.Enum('administrator', 'client', name='roletype'), nullable=False),
+    sa.Column('role', sa.Enum('administrator', 'client', 'support', name='roletype'), nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.Column("status_changed_at", sa.DateTime(timezone=True), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),

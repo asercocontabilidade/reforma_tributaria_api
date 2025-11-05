@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from domain.models.company_models import CompanyCreate
 from domain.entities.company_entity import Company
+from domain.entities.user_entity import User
 from sqlalchemy import select, update
 
 class CompanyRepository:
@@ -29,3 +30,7 @@ class CompanyRepository:
     def find_all_company(self):
         query = select(Company)
         return self.db.execute(query).scalars().all()
+
+    def find_company_by_company_id(self, company_id):
+        query = select(Company).join(User).where(Company.id == company_id)
+        return self.db.execute(query).scalars().first()

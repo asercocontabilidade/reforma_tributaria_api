@@ -48,3 +48,30 @@ class UserRepository:
     def get_user_by_id(self, user_id):
         query = select(User).where(User.id == user_id)
         return self.db.execute(query).scalar()
+
+    from sqlalchemy import update, select
+
+    def update_user(self, user_update):
+        query = (
+            update(User)
+            .where(User.id == user_update.id)
+            .values(
+                email=user_update.email,
+                full_name=user_update.full_name,
+                cnpj_cpf=user_update.cnpj_cpf,
+                role=user_update.role,
+            )
+        )
+
+        result = self.db.execute(query)
+        self.db.commit()
+
+        if result.rowcount == 0:
+            return None  # não encontrou o id
+
+        # Buscar o registro atualizado
+        user = self.db.execute(
+            select(User).where(User.id == user_update.id)
+        ).scalar_one()
+        return user
+

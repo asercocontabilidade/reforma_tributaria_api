@@ -37,6 +37,15 @@ def verify_password(raw: str, hashed: str) -> bool:
         return False
     return pwd_context.verify(raw, hashed)
 
+def _coerce_role(value: str) -> RoleType:
+    try:
+        return RoleType(value)
+    except ValueError:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Invalid role stored: {value!r}. Allowed: {[r.value for r in RoleType]}",
+        )
+
 def create_access_token(*, email: str, role: RoleType, expires_minutes: int | None = None) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=expires_minutes or ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {"sub": email, "role": role.value, "exp": expire}
@@ -74,7 +83,8 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
     role_value = user.role.value if hasattr(user.role, "value") else user.role
-    return UserEntity(id=user.id, email=user.email, full_name=user.full_name, role=RoleType(role_value), is_active=user.is_active, cnpj_cpf=user.cnpj_cpf, ip_address=user.ip_address, company_id=user.company_id)
+    coerced_role = _coerce_role(role_value)
+    return UserEntity(id=user.id, email=user.email, full_name=user.full_name, role=coerced_role, is_active=user.is_active, cnpj_cpf=user.cnpj_cpf, ip_address=user.ip_address, company_id=user.company_id)
 
 def require_roles(*allowed: RoleType):
     def _checker(current: UserEntity = Depends(get_current_user)) -> UserEntity:

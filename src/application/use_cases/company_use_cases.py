@@ -12,3 +12,6 @@ class CompanyUseCases:
 
     def find_all_company(self):
         return self.repo.find_all_company()
+
+    def find_company_by_company_id(self, company_id):
+        return self.repo.find_company_by_company_id(company_id)

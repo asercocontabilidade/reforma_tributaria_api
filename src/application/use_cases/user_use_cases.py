@@ -33,3 +33,6 @@ class UserUseCases:
 
     def get_user_by_id(self, user_id):
         return self.repo.get_user_by_id(user_id)
+
+    def update_user(self, user_update):
+        return self.repo.update_user(user_update)
