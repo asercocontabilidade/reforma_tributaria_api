@@ -4,8 +4,9 @@ import os
 import time
 import unicodedata
 import re
-import pandas as pd
 from typing import List, Dict, Any, Optional
+
+import pandas as pd
 from importlib.resources import files, as_file  # resolve recurso do pacote
 
 # -----------------------------
@@ -25,29 +26,35 @@ WANTED_COLUMNS = [
     "CBS",
 ]
 
-# Ignorar TIPI e Exceções (quaisquer variações com acento/sem acento)
+# Ignorar apenas TIPI (NÃO ignore Exceções)
 IGNORE_SHEETS = {"TIPI"}
+
 SPACE_RE = re.compile(r"\s+", flags=re.UNICODE)
 NON_ALNUM_RE = re.compile(r"[^0-9A-Za-zÀ-ÿ]+", flags=re.UNICODE)
-ROMAN_RE = re.compile(r"\b(M{0,3}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3}))\b", re.I)
-ANEXO_TOKEN_RE = re.compile(r"\bANEXO(?:S)?\b", re.I)
-DIGIT_RE = re.compile(r"\b(\d{1,4})\b")
+
+# Detector de texto jurídico (“Art…”, parágrafo, inciso…)
+LEGAL_TEXT_RE = re.compile(
+    r"""(?ix)
+    ^\s*
+    (art(igo)?\.?|art[ºo]?)      # Art., Artigo, Artº, Arto
+    [\s\-]*\d+                    # número do artigo
+    | \s*§                        # parágrafo
+    | \binciso\b | \bal[ií]nea\b | \bcap[uú]t\b
+    """,
+)
 
 # -----------------------------
-# Utils de normalização
+# Utils
 # -----------------------------
 def strip_accents(text: str) -> str:
     nfkd = unicodedata.normalize("NFKD", text)
     return "".join([c for c in nfkd if not unicodedata.combining(c)])
 
-# ncm_use_cases.py
-import pandas as pd
-
 def normalize_visible(text):
     if text is None:
         return ""
     try:
-        if pd.isna(text):  # cobre pd.NA, NaN, NaT
+        if pd.isna(text):
             return ""
     except Exception:
         pass
@@ -75,17 +82,22 @@ def normalize_for_compare(text, remove_accents: bool = True) -> str:
 def _normalize_list_for_compare(vals: list[str], remove_accents: bool = True) -> list[str]:
     return [normalize_for_compare(v, remove_accents=remove_accents) for v in vals]
 
-# Mapeia nomes "quase iguais" para a forma canônica
 def map_columns_to_canonical(columns: List[str]) -> dict:
     canon_norm_map = {normalize_for_compare(w, True): w for w in WANTED_COLUMNS}
-
-    # sinônimos úteis
     synonyms = {
         "descricao completa": "DESCRIÇÃO COMPLETA",
         "descricao do produto completa": "DESCRIÇÃO COMPLETA",
         "descricao_produto_completa": "DESCRIÇÃO COMPLETA",
-        "ibs,cbs": "CST IBS E CBS",  # em alguns arquivos pode vir mesclado como rótulo
+        "base legal": "DESCRIÇÃO COMPLETA",   # 👈 importante para a aba de exceções
+
+        "ibs,cbs": "CST IBS E CBS",
         "cst ibs cbs": "CST IBS E CBS",
+
+        "descricao tipi": "DESCRIÇÃO TIPI",
+        "descricao da tipi": "DESCRIÇÃO TIPI",
+        "descricao_tipi": "DESCRIÇÃO TIPI",
+        "desc tipi": "DESCRIÇÃO TIPI",
+
         "ibs": "IBS",
         "cbs": "CBS",
     }
@@ -126,24 +138,6 @@ def _detect_header_row(raw: pd.DataFrame, max_scan: int = 10) -> int | None:
 # -----------------------------
 # Helpers para ANEXO
 # -----------------------------
-_ANEXO_ROMAN = re.compile(
-    r"""
-    \bANEXO\S*
-    [\s:–—\-]*
-    (?P<roman>[IVXLCDM]+)\b
-    """,
-    re.IGNORECASE | re.VERBOSE,
-)
-
-_ANEXO_DIGIT = re.compile(
-    r"""
-    \bANEXO\S*
-    [\s:–—\-]*
-    (?P<digits>\d{1,4})\b
-    """,
-    re.IGNORECASE | re.VERBOSE,
-)
-
 _STANDALONE_ROMAN = re.compile(r"\b([IVXLCDM]+)\b", re.IGNORECASE)
 
 def _to_roman(num: int) -> str:
@@ -163,13 +157,10 @@ def _to_roman(num: int) -> str:
 
 def _extract_anexo_token(sheet_name: str) -> str:
     name = (sheet_name or "").strip()
-    m = _ANEXO_ROMAN.search(name)
-    if m and m.group("roman"):
-        return m.group("roman").upper()
-    d = _ANEXO_DIGIT.search(name)
-    if d and d.group("digits"):
+    m = re.search(r"\banexo\S*[\s:–—\-]*(\d{1,4})\b", name, flags=re.IGNORECASE)
+    if m:
         try:
-            return _to_roman(int(d.group("digits")))
+            return _to_roman(int(m.group(1)))
         except Exception:
             pass
     romans = _STANDALONE_ROMAN.findall(name)
@@ -185,7 +176,6 @@ def _is_long_header_text(s: str) -> bool:
     if not s:
         return False
     t = str(s).strip()
-    # "texto longo" e com letras/sentenças -> probabilíssimo ser a descrição completa
     return (len(t) >= 40) and any(ch.isalpha() for ch in t)
 
 # -----------------------------
@@ -193,7 +183,12 @@ def _is_long_header_text(s: str) -> bool:
 # -----------------------------
 class ItemsCache:
     """
-    Carrega e cacheia o Excel (todas as abas exceto TIPI e Exceções) em um DataFrame.
+    Em 'Exceções':
+      - Move texto jurídico que cair em ITEM -> DESCRIÇÃO COMPLETA (mesmo com NCM presente)
+      - Cria blocos por linha-âncora (DESCRIÇÃO COMPLETA != "" e NCM == "")
+      - Ffill dentro do bloco **apenas** DESCRIÇÃO COMPLETA e DESCRIÇÃO TIPI
+      - Não propaga ITEM/Descrição do Produto; colunas vazias permanecem vazias
+      - Remove linhas-âncora “puras” (sem NCM, ITEM e DESCRIÇÃO DO PRODUTO vazios)
     """
     def __init__(
         self,
@@ -210,7 +205,6 @@ class ItemsCache:
         self._mtime: Optional[float] = None
         self._debug_sheets: Dict[str, Dict[str, Any]] = {}
 
-    # --- path resolution ---
     def _resolve_excel_path(self) -> str:
         if self._explicit_path and os.path.exists(self._explicit_path):
             return self._explicit_path
@@ -231,17 +225,17 @@ class ItemsCache:
             return True
         return (self._df is None) or (self._mtime != mtime)
 
-    def _normalize_df(self, df: pd.DataFrame) -> pd.DataFrame:
-        # 1) Renomeia para nomes canônicos
+    def _normalize_df(self, df: pd.DataFrame, *, exceptions_mode: bool = False) -> pd.DataFrame:
+        # 1) Renomeia
         mapping = map_columns_to_canonical(list(df.columns))
         if mapping:
             df = df.rename(columns=mapping)
 
-        # 2) Junta colunas duplicadas por nome canônico
+        # 2) Junta colunas duplicadas
         out = pd.DataFrame()
         for c in WANTED_COLUMNS:
             if c not in df.columns:
-                out[c] = ""  # coluna ausente -> cria vazia
+                out[c] = ""
                 continue
             same_named_cols = [col for col in df.columns if col == c]
             if len(same_named_cols) == 1:
@@ -257,42 +251,91 @@ class ItemsCache:
 
         # 3) Normalização visual
         for c in WANTED_COLUMNS:
-            df[c] = df[c].map(normalize_visible) if c in df.columns else ""
-
-        out = pd.DataFrame()
-        for c in WANTED_COLUMNS:
-            out[c] = df.get(c, "")
-
-        # 4) Preencher células mescladas
-        # Primeiro troca ""/brancos por NA para ffill/bfill funcionarem
-        for c in ["ITEM", "DESCRIÇÃO DO PRODUTO", "DESCRIÇÃO COMPLETA"]:
             if c in out.columns:
-                out[c] = out[c].replace(r"^\s*$", pd.NA, regex=True)
+                out[c] = out[c].map(normalize_visible)
 
-        # ITEM e DESCRIÇÃO DO PRODUTO: ffill global (como já fazia)
-        for c in ["ITEM", "DESCRIÇÃO DO PRODUTO"]:
-            if c in out.columns:
-                out[c] = out[c].ffill()
+        # 4) Preenchimentos
+        if not exceptions_mode:
+            # === MODO NORMAL ===
+            for c in ["ITEM", "DESCRIÇÃO DO PRODUTO", "DESCRIÇÃO COMPLETA"]:
+                if c in out.columns:
+                    out[c] = out[c].replace(r"^\s*$", pd.NA, regex=True)
+            for c in ["ITEM", "DESCRIÇÃO DO PRODUTO"]:
+                if c in out.columns:
+                    out[c] = out[c].ffill()
+            if "DESCRIÇÃO COMPLETA" in out.columns:
+                if "ANEXO" in out.columns and "ITEM" in out.columns:
+                    out["DESCRIÇÃO COMPLETA"] = (
+                        out.groupby(["ANEXO", "ITEM"])["DESCRIÇÃO COMPLETA"]
+                        .transform(lambda s: s.ffill().bfill())
+                    )
+                else:
+                    out["DESCRIÇÃO COMPLETA"] = out["DESCRIÇÃO COMPLETA"].ffill().bfill()
+            for c in out.columns:
+                out[c] = out[c].fillna("")
+        else:
+            # === MODO EXCEÇÕES ===
+            # 4.1) mover texto jurídico do ITEM -> DESCRIÇÃO COMPLETA (sempre que possível)
+            if "ITEM" in out.columns and "DESCRIÇÃO COMPLETA" in out.columns:
+                item_s = out["ITEM"].astype(str)
+                move_mask = item_s.str.contains(LEGAL_TEXT_RE, na=False) & \
+                            (out["DESCRIÇÃO COMPLETA"].astype(str).str.strip() == "")
+                out.loc[move_mask, "DESCRIÇÃO COMPLETA"] = item_s.loc[move_mask].values
+                out.loc[move_mask, "ITEM"] = ""
 
-        # DESCRIÇÃO COMPLETA: preencher por grupo (ANEXO, ITEM) para pegar mesclagens por bloco
-        if "DESCRIÇÃO COMPLETA" in out.columns:
-            if "ANEXO" in out.columns and "ITEM" in out.columns:
-                out["DESCRIÇÃO COMPLETA"] = (
-                    out.groupby(["ANEXO", "ITEM"])["DESCRIÇÃO COMPLETA"]
-                    .transform(lambda s: s.ffill().bfill())
+            # 4.2) define âncora de bloco: linha com DESCRIÇÃO COMPLETA != "" e NCM == ""
+            descc_s = out.get("DESCRIÇÃO COMPLETA", pd.Series([""]*len(out))).astype(str).str.strip()
+            ncm_s   = out.get("NCM", pd.Series([""]*len(out))).astype(str).str.strip()
+            anchor_mask = (descc_s != "") & (ncm_s == "")
+
+            # 4.3) block_id por cumulativo de âncoras
+            block_id = anchor_mask.astype(int).cumsum()
+            out["__BLOCK_ID"] = block_id
+
+            # 4.4) propaga por bloco apenas DESCRIÇÃO COMPLETA e DESCRIÇÃO TIPI
+            for col in ["DESCRIÇÃO COMPLETA", "DESCRIÇÃO TIPI"]:
+                if col in out.columns:
+                    out[col] = (
+                        out.groupby("__BLOCK_ID")[col]
+                        .apply(lambda s: s.replace(r"^\s*$", pd.NA, regex=True).ffill())
+                        .fillna("")
+                        .values
+                    )
+
+            # 4.5) fallback para TIPI em exceções (há planilhas sem âncoras formais)
+            if "DESCRIÇÃO TIPI" in out.columns:
+                out["DESCRIÇÃO TIPI"] = (
+                    out["DESCRIÇÃO TIPI"]
+                    .replace(r"^\s*$", pd.NA, regex=True)
+                    .ffill()
+                    .fillna("")
                 )
-            else:
-                out["DESCRIÇÃO COMPLETA"] = out["DESCRIÇÃO COMPLETA"].ffill().bfill()
 
-        # 5) Volta NA -> "" e remove linhas totalmente vazias
-        for c in out.columns:
-            out[c] = out[c].fillna("")
+            # 4.6) NÃO propagar ITEM/Descrição do Produto (permanece como veio)
+            for c in out.columns:
+                out[c] = out[c].fillna("")
+
+            # 4.7) remover âncoras “puras” (sem NCM/ITEM/DESC PRODUTO)
+            only_anchor = anchor_mask & \
+                          out.get("ITEM", "").astype(str).str.strip().eq("") & \
+                          out.get("DESCRIÇÃO DO PRODUTO", "").astype(str).str.strip().eq("")
+            out = out.loc[~only_anchor].reset_index(drop=True)
+
+            if "__BLOCK_ID" in out.columns:
+                del out["__BLOCK_ID"]
+
+        # 5) Remove linhas totalmente vazias
         empty_mask = (
-                (out.get("NCM", "") == "") &
-                (out.get("DESCRIÇÃO DO PRODUTO", "") == "") &
-                (out.get("DESCRIÇÃO COMPLETA", "") == "")
+            (out.get("NCM", "") == "") &
+            (out.get("DESCRIÇÃO DO PRODUTO", "") == "") &
+            (out.get("DESCRIÇÃO COMPLETA", "") == "")
         )
         out = out.loc[~empty_mask].reset_index(drop=True)
+
+        # 6) rastro opcional
+        if "__SHEET_TAG" in df.columns:
+            out["__SHEET_TAG"] = df["__SHEET_TAG"].iloc[:len(out)].fillna("").values
+
         return out
 
     def _load_excel(self) -> pd.DataFrame:
@@ -316,11 +359,13 @@ class ItemsCache:
 
         for raw_name, raw in sheets.items():
             name = str(raw_name).strip()
-
-            # Ignora TIPI e quaisquer abas cujo nome contenha "EXCE" (Exceções / Excecoes)
             upper_name = strip_accents(name).upper()
-            if name.upper() in IGNORE_SHEETS or "EXCE" in upper_name:
+
+            # Ignora apenas TIPI
+            if name.upper() in IGNORE_SHEETS:
                 continue
+
+            is_exceptions = "EXCE" in upper_name  # Exceções/Excecoes
 
             hdr_idx = _detect_header_row(raw, max_scan=10)
             if hdr_idx is None:
@@ -341,27 +386,32 @@ class ItemsCache:
                     body[k] = ""
             body.columns = header_vals
 
-            if "DESCRIÇÃO COMPLETA" not in body.columns:
+            # Em Exceções NÃO inferir "DESCRIÇÃO COMPLETA" por cabeçalho longo
+            if "DESCRIÇÃO COMPLETA" not in body.columns and not is_exceptions:
                 long_headers = [(i, h) for i, h in enumerate(header_vals) if _is_long_header_text(h)]
                 if long_headers:
-                    # pega o MAIS longo (mais seguro)
                     chosen_idx, chosen_text = max(long_headers, key=lambda x: len(str(x[1])))
                     body["DESCRIÇÃO COMPLETA"] = str(chosen_text).strip()
 
-            # Injeta ANEXO derivado do nome da aba
-            anexo_label = _extract_anexo_label(name)
+            # ANEXO
+            anexo_label = "Exceções" if is_exceptions else _extract_anexo_label(name)
             body["ANEXO"] = anexo_label
+
+            # rastro opcional
+            body["__SHEET_TAG"] = ("EXC::" + name) if is_exceptions else ("ANX::" + anexo_label)
 
             before_rows = int(body.shape[0])
             before_cols = list(map(str, body.columns))
-            normalized = self._normalize_df(body)
-            after_rows = int(normalized.shape[0])
 
+            normalized = self._normalize_df(body, exceptions_mode=is_exceptions)
+
+            after_rows = int(normalized.shape[0])
             self._debug_sheets[name] = {
                 "header_row_detected": hdr_idx,
                 "rows_before": before_rows,
                 "cols_before": before_cols[:20],
                 "rows_after": after_rows,
+                "is_exceptions": is_exceptions,
             }
 
             if after_rows > 0:
@@ -370,8 +420,8 @@ class ItemsCache:
         if not frames:
             return pd.DataFrame(columns=WANTED_COLUMNS)
 
+        # NÃO re-normalizar aqui; já normalizado por aba
         df_all = pd.concat(frames, ignore_index=True)
-        df_all = self._normalize_df(df_all)
         return df_all
 
     def df(self) -> pd.DataFrame:
@@ -384,7 +434,9 @@ class ItemsCache:
             self._df = df
         return self._df.copy()
 
-    # Busca multi (já existente)
+    # -----------------------------
+    # Buscas
+    # -----------------------------
     def search(self, q: str, field: Optional[str], remove_accents: bool = True) -> pd.DataFrame:
         df = self.df()
         q_norm = normalize_for_compare(q or "", remove_accents=remove_accents)
@@ -452,16 +504,10 @@ class ItemsCache:
         return df.loc[combined]
 
     # ---------------------------------------
-    # NOVO: busca de detalhes (Descrição Completa, IBS, CBS)
+    # Detalhes
     # ---------------------------------------
     def find_details(self, ncm: Optional[str] = None, item: Optional[str] = None) -> pd.DataFrame:
-        """
-        - Se 'ncm' informado: filtra por igualdade normalizada em NCM (ideal para código exato).
-        - Senão, se 'item' informado: igualdade normalizada em ITEM.
-        - Retorna colunas ['ANEXO','ITEM','NCM','DESCRIÇÃO DO PRODUTO','DESCRIÇÃO COMPLETA','IBS','CBS'].
-        """
         df = self.df()
-
         if ncm:
             key = normalize_for_compare(ncm, True)
             mask = df["NCM"].map(lambda x: normalize_for_compare(x, True) == key)
@@ -480,45 +526,9 @@ class ItemsCache:
 # -----------------------------
 # Serializadores para API
 # -----------------------------
-# ncm_use_cases.py
-
 def _viz(v):  # atalho
     return normalize_visible(v)
 
-def to_api_rows(df_page: pd.DataFrame) -> list[dict]:
-    out = []
-    for _, r in df_page.iterrows():
-        out.append({
-            "ITEM": _viz(r.get("ITEM", "")),
-            "ANEXO": _viz(r.get("ANEXO", "")),
-            "DESCRIÇÃO DO PRODUTO": _viz(r.get("DESCRIÇÃO DO PRODUTO", "")),
-            "NCM": _viz(r.get("NCM", "")),
-            "DESCRIÇÃO TIPI": _viz(r.get("DESCRIÇÃO TIPI", "")),
-            "CST IBS E CBS": _viz(r.get("CST IBS E CBS", "")),
-            "CCLASSTRIB": _viz(r.get("CCLASSTRIB", "")),
-            # se estiver expondo novas colunas no /search:
-            "DESCRIÇÃO COMPLETA": _viz(r.get("DESCRIÇÃO COMPLETA", "")),
-            "IBS": _viz(r.get("IBS", "")),
-            "CBS": _viz(r.get("CBS", "")),
-        })
-    return out
-
-def to_api_details(df: pd.DataFrame) -> list[dict]:
-    out = []
-    for _, r in df.iterrows():
-        out.append({
-            "ANEXO": _viz(r.get("ANEXO", "")),
-            "ITEM": _viz(r.get("ITEM", "")),
-            "NCM": _viz(r.get("NCM", "")),
-            "DESCRIÇÃO DO PRODUTO": _viz(r.get("DESCRIÇÃO DO PRODUTO", "")),
-            "DESCRIÇÃO COMPLETA": _viz(r.get("DESCRIÇÃO COMPLETA", "")),
-            "IBS": _viz(r.get("IBS", "")),
-            "CBS": _viz(r.get("CBS", "")),
-        })
-    return out
-
-
-# ncm_use_cases.py -> to_api_details
 def _fmt_pct(v):
     if v is None or str(v).strip() == "":
         return ""
@@ -531,6 +541,23 @@ def _fmt_pct(v):
         return s
     except Exception:
         return str(v)
+
+def to_api_rows(df_page: pd.DataFrame) -> list[dict]:
+    out = []
+    for _, r in df_page.iterrows():
+        out.append({
+            "ITEM": _viz(r.get("ITEM", "")),
+            "ANEXO": _viz(r.get("ANEXO", "")),
+            "DESCRIÇÃO DO PRODUTO": _viz(r.get("DESCRIÇÃO DO PRODUTO", "")),
+            "NCM": _viz(r.get("NCM", "")),
+            "DESCRIÇÃO TIPI": _viz(r.get("DESCRIÇÃO TIPI", "")),
+            "CST IBS E CBS": _viz(r.get("CST IBS E CBS", "")),
+            "CCLASSTRIB": _viz(r.get("CCLASSTRIB", "")),
+            "DESCRIÇÃO COMPLETA": _viz(r.get("DESCRIÇÃO COMPLETA", "")),
+            "IBS": _viz(r.get("IBS", "")),
+            "CBS": _viz(r.get("CBS", "")),
+        })
+    return out
 
 def to_api_details(df: pd.DataFrame) -> list[dict]:
     out = []

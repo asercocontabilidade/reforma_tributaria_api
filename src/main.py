@@ -11,6 +11,7 @@ app = FastAPI(title="API App Reforma Tributária", version="0.1.0")
 origins = [
     "http://localhost:5173",
     "http://192.168.1.65:5173",
+    "http://192.168.1.65:5174",
     "http://192.168.1.113:3005",
     "http://localhost:5003",
     # adicione outros hosts que usar
