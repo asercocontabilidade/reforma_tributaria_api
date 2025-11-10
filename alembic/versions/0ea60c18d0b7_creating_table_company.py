@@ -23,7 +23,7 @@ def upgrade() -> None:
         'company',
         sa.Column('id', sa.Integer(), primary_key=True),
         sa.Column('customer_name', sa.String(length=255), nullable=True),
-        sa.Column('role', sa.Enum('pro', 'basic', name='roletype'), nullable=False),
+        sa.Column('role', sa.Enum('pro', 'basic', 'special', name='roletype'), nullable=False),
         sa.Column('company_name', sa.String(length=255), nullable=True),
         sa.Column('phone_number', sa.String(length=255), nullable=True),
         sa.Column('address', sa.String(length=255), nullable=True),

@@ -7,11 +7,13 @@ from enum import Enum
 class RoleType(str, Enum):
     administrator = "basic"
     client = "pro"
+    special = "special"
 
 class CompanyCreate(BaseModel):
     customer_name: str | None = None
     role: RoleType
     company_name: str | None = None
+    cnpj: str | None = None
     phone_number: str | None = None
     address: str | None = None
     contract_start_date: datetime | None = None
@@ -26,6 +28,7 @@ class CompanyRead(BaseModel):
     customer_name: str | None = None
     role: RoleType
     company_name: str | None = None
+    cnpj: str | None = None
     phone_number: str | None = None
     address: str | None = None
     contract_start_date: datetime | None = None

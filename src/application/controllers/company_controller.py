@@ -30,3 +30,12 @@ def find_company_by_company_id(
 ):
     uc = CompanyUseCases(db)
     return uc.find_company_by_company_id(company_id)
+
+@router.put("/update_company", response_model=CompanyRead)
+def update_company(
+       company: CompanyRead,
+       db: Session = Depends(get_db),
+):
+    uc = CompanyUseCases(db)
+    return uc.update_company(company)
+

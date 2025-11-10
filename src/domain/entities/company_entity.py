@@ -8,6 +8,7 @@ from typing import List, Optional
 class RoleType(str, PyEnum):
     basic = "basic"
     pro = "pro"
+    special = "special"
 
 class Company(Base):
     __tablename__ = 'company'
@@ -18,6 +19,7 @@ class Company(Base):
         SAEnum(RoleType, name="roletype"), nullable=False, default=RoleType.basic
     )
     company_name: Mapped[str | None] = Column(String(255), nullable=True)
+    cnpj: Mapped[str | None] = Column(String(255), nullable=False)
     phone_number: Mapped[str | None] = Column(String(255), nullable=True)
     address: Mapped[str | None] = Column(String(255), nullable=True)
     contract_start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
