@@ -14,6 +14,9 @@ class CompanyCreate(BaseModel):
     role: RoleType
     company_name: str | None = None
     cnpj: str | None = None
+    cpf: str | None = None
+    email: str | None = None
+    cnae_description: str | None = None
     phone_number: str | None = None
     address: str | None = None
     contract_start_date: datetime | None = None
@@ -29,6 +32,9 @@ class CompanyRead(BaseModel):
     role: RoleType
     company_name: str | None = None
     cnpj: str | None = None
+    cpf: str | None = None
+    email: str | None = None
+    cnae_description: str | None = None
     phone_number: str | None = None
     address: str | None = None
     contract_start_date: datetime | None = None
