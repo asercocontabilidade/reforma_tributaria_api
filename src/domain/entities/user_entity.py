@@ -1,5 +1,5 @@
 # models.py
-from sqlalchemy import String, Enum as SAEnum, ForeignKey, Boolean, DateTime, func, inspect
+from sqlalchemy import String, Enum as SAEnum, ForeignKey, Boolean, DateTime, func, inspect, Integer
 from datetime import datetime
 from sqlalchemy.orm import (
     Mapped, mapped_column, relationship
@@ -8,7 +8,7 @@ from enum import Enum as PyEnum
 from sqlalchemy import event
 from infrastructure.database import Base
 from zoneinfo import ZoneInfo
-from typing import Optional
+from typing import Optional, List
 
 BRAZIL_TZ = ZoneInfo("America/Sao_Paulo")
 
@@ -41,6 +41,12 @@ class User(Base):
     )
     company: Mapped[Optional["Company"]] = relationship("Company", back_populates="users")
 
+    contracts: Mapped[List["Contract"]] = relationship(
+        "Contract",
+        back_populates="user",
+        cascade="save-update, merge",
+        passive_deletes=True
+    )
 
 @event.listens_for(User, "before_update")
 def update_status_changed_at(mapper, connection, target: User):

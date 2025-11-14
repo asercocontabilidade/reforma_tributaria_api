@@ -1,10 +1,12 @@
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from adapters.repository.user_repository import UserRepository
+from adapters.repository.contract_repository import ContractRepository
 
 class UserUseCases:
     def __init__(self, db: Session):
         self.repo = UserRepository(db)
+        self.contract_repo = ContractRepository(db)
 
     def change_user_status(self, user_id: int, is_active: bool):
         user = self.repo.get_by_id(user_id)
@@ -36,3 +38,9 @@ class UserUseCases:
 
     def update_user(self, user_update):
         return self.repo.update_user(user_update)
+
+    def contract_signing(self, contract, ip_address_local):
+        return self.contract_repo.contract_signing(contract, ip_address_local)
+
+    def is_signed_contract(self, user_id, type_contract):
+        return self.contract_repo.is_signed_contract(user_id, type_contract)

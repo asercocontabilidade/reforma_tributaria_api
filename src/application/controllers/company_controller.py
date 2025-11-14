@@ -35,6 +35,7 @@ def find_company_by_company_id(
 def update_company(
        company: CompanyRead,
        db: Session = Depends(get_db),
+       current: UserEntity = Depends(get_current_user)
 ):
     uc = CompanyUseCases(db)
     return uc.update_company(company)

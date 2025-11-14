@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from infrastructure.database import get_db
 from domain.models.user_models import UserUpdate, UserRead, UserUpdateCompany, UserUpdateConfig
+from domain.models.contract_models import ContractCreate
 from application.use_cases.user_use_cases import UserUseCases
 from domain.entities.user_entity import RoleType
 from application.use_cases.security import require_roles
@@ -11,6 +12,7 @@ from application.use_cases.security import (
 )
 from domain.entities.user_classes import UserEntity
 from sqlalchemy.sql.functions import user
+from application.utils.utils import get_client_ip
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -94,3 +96,24 @@ def update_user(
 ):
     use_case = UserUseCases(db)
     return use_case.update_user(user_update)
+
+@router.post("/contract_signing", status_code=204)
+def contract_signing(
+    request: Request,
+    contract: ContractCreate,
+    db: Session = Depends(get_db),
+    current: UserEntity = Depends(get_current_user)
+):
+    use_case = UserUseCases(db)
+    ip_address_local = get_client_ip(request)
+    return use_case.contract_signing(contract, ip_address_local)
+
+@router.get("/is_signed_contract/{user_id}/{type_contract}", response_model=bool)
+def is_signed_contract(
+        user_id: int,
+        type_contract: str,
+        db: Session = Depends(get_db),
+        current: UserEntity = Depends(get_current_user)
+):
+    use_case = UserUseCases(db)
+    return use_case.is_signed_contract(user_id, type_contract)

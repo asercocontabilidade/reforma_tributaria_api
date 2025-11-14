@@ -394,7 +394,10 @@ class ItemsCache:
                     body["DESCRIÇÃO COMPLETA"] = str(chosen_text).strip()
 
             # ANEXO
-            anexo_label = "Exceções" if is_exceptions else _extract_anexo_label(name)
+            if "TRIBUT" in upper_name:
+                anexo_label = "Tributado"
+            else:
+                anexo_label = "Exceções" if is_exceptions else _extract_anexo_label(name)
             body["ANEXO"] = anexo_label
 
             # rastro opcional
