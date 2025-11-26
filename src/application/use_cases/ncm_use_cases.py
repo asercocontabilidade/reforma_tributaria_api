@@ -254,25 +254,60 @@ class ItemsCache:
             if c in out.columns:
                 out[c] = out[c].map(normalize_visible)
 
+        # 3.1) Correção específica para aba "Tributado":
+        #      remover textos de cabeçalho que entram como dado
+        if not exceptions_mode and "ANEXO" in df.columns:
+            anexo_norm = df["ANEXO"].astype(str).str.strip().str.lower()
+            mask_trib = anexo_norm == "tributado"
+
+            if mask_trib.any():
+                def _clear_header_like(col_name: str, label_norm: str):
+                    if col_name not in out.columns:
+                        return
+                    s = out.loc[mask_trib, col_name].astype(str).str.strip().str.lower()
+                    out.loc[mask_trib & s.eq(label_norm), col_name] = ""
+
+                _clear_header_like("ITEM", "item")
+                _clear_header_like("DESCRIÇÃO DO PRODUTO", "descrição do produto")
+                _clear_header_like("NCM", "ncm")
+                _clear_header_like("DESCRIÇÃO TIPI", "descrição tipi")
+                _clear_header_like("CST IBS E CBS", "cst ibs e cbs")
+                _clear_header_like("CCLASSTRIB", "cclasstrib")
+                _clear_header_like("IBS", "ibs")
+                _clear_header_like("CBS", "cbs")
+
         # 4) Preenchimentos
         if not exceptions_mode:
             # === MODO NORMAL ===
             for c in ["ITEM", "DESCRIÇÃO DO PRODUTO", "DESCRIÇÃO COMPLETA"]:
                 if c in out.columns:
                     out[c] = out[c].replace(r"^\s*$", pd.NA, regex=True)
+
             for c in ["ITEM", "DESCRIÇÃO DO PRODUTO"]:
                 if c in out.columns:
                     out[c] = out[c].ffill()
+
             if "DESCRIÇÃO COMPLETA" in out.columns:
                 if "ANEXO" in out.columns and "ITEM" in out.columns:
-                    out["DESCRIÇÃO COMPLETA"] = (
-                        out.groupby(["ANEXO", "ITEM"])["DESCRIÇÃO COMPLETA"]
-                        .transform(lambda s: s.ffill().bfill())
-                    )
+                    item_series = out["ITEM"]
+                    # Se ITEM está todo vazio (caso típico da aba Tributado),
+                    # agrupa só por ANEXO para propagar a base legal
+                    if item_series.isna().all():
+                        out["DESCRIÇÃO COMPLETA"] = (
+                            out.groupby("ANEXO")["DESCRIÇÃO COMPLETA"]
+                            .transform(lambda s: s.ffill().bfill())
+                        )
+                    else:
+                        out["DESCRIÇÃO COMPLETA"] = (
+                            out.groupby(["ANEXO", "ITEM"])["DESCRIÇÃO COMPLETA"]
+                            .transform(lambda s: s.ffill().bfill())
+                        )
                 else:
                     out["DESCRIÇÃO COMPLETA"] = out["DESCRIÇÃO COMPLETA"].ffill().bfill()
+
             for c in out.columns:
                 out[c] = out[c].fillna("")
+
         else:
             # === MODO EXCEÇÕES ===
             # 4.1) mover texto jurídico do ITEM -> DESCRIÇÃO COMPLETA (sempre que possível)
@@ -332,6 +367,26 @@ class ItemsCache:
         )
         out = out.loc[~empty_mask].reset_index(drop=True)
 
+        # 5.1) Remover linha fantasma inicial da aba Tributado
+        if not exceptions_mode and "ANEXO" in out.columns:
+            mask_trib = out["ANEXO"].astype(str).str.strip().str.lower() == "tributado"
+
+            # Remove linha que:
+            # - é da aba Tributado
+            # - é a primeira linha
+            # - e não tem NCM, ITEM ou DESCRIÇÃO DO PRODUTO
+            if len(out) > 0 and mask_trib.iloc[0]:
+                first = out.iloc[0]
+
+                cond_empty = (
+                    str(first.get("ITEM", "")).strip() == "" and
+                    str(first.get("DESCRIÇÃO DO PRODUTO", "")).strip() == "" and
+                    str(first.get("NCM", "")).strip() == ""
+                )
+
+                if cond_empty:
+                    out = out.iloc[1:].reset_index(drop=True)
+
         # 6) rastro opcional
         if "__SHEET_TAG" in df.columns:
             out["__SHEET_TAG"] = df["__SHEET_TAG"].iloc[:len(out)].fillna("").values
@@ -373,9 +428,31 @@ class ItemsCache:
                 body = raw.iloc[1:].copy()
             else:
                 header_vals = [str(x) if x is not None else "" for x in list(raw.iloc[hdr_idx].values)]
-                body = raw.iloc[hdr_idx + 1:].copy()
+
+                # --- CASO ESPECIAL PARA "TRIBUTADO" ---
+                if "TRIBUT" in upper_name:
+                    # A linha de cabeçalho contém dados (Base Legal)
+                    body = raw.iloc[hdr_idx:].copy()
+                else:
+                    body = raw.iloc[hdr_idx + 1:].copy()
 
             body = body.reset_index(drop=True)
+
+            if "TRIBUT" in upper_name:
+                # Remove linha de cabeçalho duplicado dentro dos dados
+                def is_fake_header(val, target):
+                    return str(val).strip().lower() == target.lower()
+
+                mask_fake = (
+                    body.apply(lambda row:
+                               is_fake_header(row.get("ITEM", ""), "ITEM") or
+                               is_fake_header(row.get("DESCRIÇÃO DO PRODUTO", ""), "DESCRIÇÃO DO PRODUTO"),
+                               axis=1
+                               )
+                )
+
+                # Remove linhas onde ITEM ou DESCRIÇÃO DO PRODUTO são cabeçalhos falsos
+                body = body.loc[~mask_fake].reset_index(drop=True)
 
             # equaliza colunas
             max_cols = max(len(header_vals), body.shape[1])

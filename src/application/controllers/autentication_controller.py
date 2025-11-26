@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 
 from infrastructure.database import get_db
-from domain.models.user_models import UserCreate, UserRead, LoginRequest, Token, LoginResponse
+from domain.models.user_models import UserCreate, UserRead, LoginRequest, Token, LoginResponse, ForgotPasswordRequest, ResetPasswordRequest
 from domain.entities.user_entity import RoleType
 from domain.entities.user_classes import UserEntity
 from application.use_cases.autentication_use_cases import AuthenticationUseCases
@@ -178,3 +178,32 @@ def me(current: UserEntity = Depends(get_current_user)):
 @router.get("/admin-only", response_model=dict)
 def admin_only(_: UserEntity = Depends(require_roles(RoleType.administrator))):
     return {"message": "You are an administrator."}
+
+@router.post("/forgot-password")
+def forgot_password(payload: ForgotPasswordRequest,
+                    db: Session = Depends(get_db),
+                    current: UserEntity = Depends(get_current_user)
+                    ):
+    uc = AuthenticationUseCases(db)
+
+    try:
+        uc.forgot_password(email=payload.email)
+        return {"message": "Se o e-mail existir no sistema, enviaremos instruções de redefinição."}
+    except Exception:
+        # Nunca revelar se o email existe ou não!
+        return {"message": "Se o e-mail existir no sistema, enviaremos instruções de redefinição."}
+
+
+@router.post("/reset-password")
+def reset_password(payload: ResetPasswordRequest,
+                   db: Session = Depends(get_db),
+                   current: UserEntity = Depends(get_current_user)
+                   ):
+    uc = AuthenticationUseCases(db)
+
+    try:
+        uc.reset_password(token=payload.token, new_password=payload.new_password)
+        return {"message": "Senha redefinida com sucesso."}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+

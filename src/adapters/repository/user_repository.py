@@ -75,3 +75,11 @@ class UserRepository:
         ).scalar_one()
         return user
 
+    def update_password(self, user_id: int, hashed_password: str):
+        user = self.db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return False
+        user.password_hash = hashed_password
+        self.db.commit()
+        return True
+
