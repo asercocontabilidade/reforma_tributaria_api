@@ -278,14 +278,39 @@ class ItemsCache:
 
         # 4) Preenchimentos
         if not exceptions_mode:
-            # === MODO NORMAL ===
+            # Normaliza valores vazios para NaN antes de propagação
             for c in ["ITEM", "DESCRIÇÃO DO PRODUTO", "DESCRIÇÃO COMPLETA"]:
                 if c in out.columns:
                     out[c] = out[c].replace(r"^\s*$", pd.NA, regex=True)
 
-            for c in ["ITEM", "DESCRIÇÃO DO PRODUTO"]:
-                if c in out.columns:
-                    out[c] = out[c].ffill()
+            # Propaga ITEM e DESCRIÇÃO DO PRODUTO (planilhas usam células mescladas)
+            if "ITEM" in out.columns:
+                out["ITEM"] = out["ITEM"].ffill()
+
+            if "DESCRIÇÃO DO PRODUTO" in out.columns:
+                out["DESCRIÇÃO DO PRODUTO"] = out["DESCRIÇÃO DO PRODUTO"].ffill()
+
+            # Propaga Base Legal em agrupamentos corretos
+            if "DESCRIÇÃO COMPLETA" in out.columns:
+                if "ANEXO" in out.columns and "ITEM" in out.columns:
+                    item_series = out["ITEM"]
+                    # Para ANEXO Tributado (ITEM vazio)
+                    if item_series.isna().all():
+                        out["DESCRIÇÃO COMPLETA"] = (
+                            out.groupby("ANEXO")["DESCRIÇÃO COMPLETA"]
+                            .transform(lambda s: s.ffill().bfill())
+                        )
+                    else:
+                        out["DESCRIÇÃO COMPLETA"] = (
+                            out.groupby(["ANEXO", "ITEM"])["DESCRIÇÃO COMPLETA"]
+                            .transform(lambda s: s.ffill().bfill())
+                        )
+                else:
+                    out["DESCRIÇÃO COMPLETA"] = out["DESCRIÇÃO COMPLETA"].ffill().bfill()
+
+            # Preenche vazios restantes
+            for c in out.columns:
+                out[c] = out[c].fillna("")
 
             if "DESCRIÇÃO COMPLETA" in out.columns:
                 if "ANEXO" in out.columns and "ITEM" in out.columns:
@@ -529,6 +554,14 @@ class ItemsCache:
         search_cols = ["ITEM", "ANEXO", "DESCRIÇÃO DO PRODUTO", "NCM", "DESCRIÇÃO TIPI"]
 
         if not field or field.upper() == "ALL":
+
+            # Se for um NCM no formato 0000.00.00 → match EXATO, não parcial
+            if re.fullmatch(r"\d{4}\.\d{2}\.\d{2}", q.strip()):
+                wanted = q.strip()
+
+                return df.loc[df["NCM"].astype(str).str.strip() == wanted]
+
+            # Busca normal por texto (contains)
             mask = None
             for col in search_cols:
                 if col in df.columns:
@@ -543,9 +576,9 @@ class ItemsCache:
         return df.loc[series_norm(df[canon]).str.contains(q_norm, na=False, regex=False)]
 
     def search_multi(
-        self,
-        filters: list[tuple[str | None, str | None]],
-        remove_accents: bool = True
+            self,
+            filters: list[tuple[str | None, str | None]],
+            remove_accents: bool = True
     ) -> pd.DataFrame:
         df = self.df()
 
@@ -553,10 +586,20 @@ class ItemsCache:
             return s.map(lambda x: normalize_for_compare(x, remove_accents=remove_accents))
 
         def mask_for(field: str | None, q: str | None) -> pd.Series | None:
-            q_norm = normalize_for_compare(q or "", remove_accents=remove_accents)
-            if not q_norm:
+            if not q:
                 return None
+
+            q_clean = q.strip()
+
+            # 🔥 1) Se o valor é um NCM exato → busca EXATA!
+            if re.fullmatch(r"\d{4}\.\d{2}\.\d{2}", q_clean):
+                return df["NCM"].astype(str).str.strip() == q_clean
+
+            # 🔥 2) Busca normal (contains) para textos
+            q_norm = normalize_for_compare(q_clean, remove_accents=remove_accents)
+
             search_cols = ["ITEM", "ANEXO", "DESCRIÇÃO DO PRODUTO", "NCM", "DESCRIÇÃO TIPI"]
+
             if not field or field.upper() == "ALL":
                 m = None
                 for col in search_cols:
@@ -564,12 +607,16 @@ class ItemsCache:
                         part = series_norm(df[col]).str.contains(q_norm, na=False, regex=False)
                         m = part if m is None else (m | part)
                 return m
+
+            # Campo específico
             col_map = map_columns_to_canonical([field])
             canon = col_map.get(field, field)
             if canon not in df.columns:
                 return None
+
             return series_norm(df[canon]).str.contains(q_norm, na=False, regex=False)
 
+        # ---- Combinação de máscaras ----
         masks = []
         for f, q in filters[:2]:
             m = mask_for(f, q)
@@ -578,9 +625,11 @@ class ItemsCache:
 
         if not masks:
             return df
+
         combined = masks[0]
         for m in masks[1:]:
             combined = combined & m
+
         return df.loc[combined]
 
     # ---------------------------------------

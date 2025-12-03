@@ -11,7 +11,10 @@ from typing import List
 router = APIRouter(prefix="/company", tags=["company"])
 
 @router.post("/register", status_code=201, summary="Search items (auth required)", response_model=CompanyCreate)
-def register_customer(payload: CompanyCreate,db: Session = Depends(get_db), current: UserEntity = Depends(get_current_user)):
+def register_customer(payload: CompanyCreate,
+                      db: Session = Depends(get_db),
+                      current: UserEntity = Depends(get_current_user)
+                      ):
     uc = CompanyUseCases(db)
     return uc.register(payload)
 
