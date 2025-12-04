@@ -18,6 +18,14 @@ def register_customer(payload: CompanyCreate,
     uc = CompanyUseCases(db)
     return uc.register(payload)
 
+@router.post("/register_user", status_code=201, summary="Search items (auth required)", response_model=CompanyRead)
+def register_customer(payload: CompanyCreate,
+                      db: Session = Depends(get_db),
+                      # current: UserEntity = Depends(get_current_user)
+                      ):
+    uc = CompanyUseCases(db)
+    return uc.register_user(payload)
+
 @router.get("/find_all_company", response_model=List[CompanyRead])
 def find_all_company(db: Session = Depends(get_db),
                      current: UserEntity = Depends(get_current_user)

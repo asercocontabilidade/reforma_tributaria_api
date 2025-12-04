@@ -10,6 +10,9 @@ class CompanyUseCases:
     def register(self, company: CompanyCreate):
         return self.repo.register(company)
 
+    def register_user(self, company: CompanyCreate):
+        return self.repo.register(company)
+
     def find_all_company(self):
         return self.repo.find_all_company()
 

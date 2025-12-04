@@ -9,27 +9,22 @@ class CompanyRepository:
         self.db = db
 
     def register(self, company: CompanyCreate):
-
-        company_entity = Company(
-            customer_name=company.customer_name,
-            company_name=company.company_name,
-            cnpj=company.cnpj,
-            cpf=company.cpf,
-            email=company.email,
-            phone_number=company.phone_number,
-            address=company.address,
-            contract_start_date=company.contract_start_date,
-            contract_end_date=company.contract_end_date,
-            cnae_company=company.cnae_company,
-            cnae_description=company.cnae_description,
-            tax_regime=company.tax_regime,
-            erp_code=company.erp_code,
-            monthly_value=company.monthly_value,
-        )
-
+        data = company.dict()
+        company_entity = Company(**data)
         self.db.add(company_entity)
         self.db.commit()
-        return company
+        self.db.refresh(company_entity)
+
+        return company_entity
+
+    def register_user(self, company: CompanyCreate):
+        data = company.dict()
+        company_entity = Company(**data)
+        self.db.add(company_entity)
+        self.db.commit()
+        self.db.refresh(company_entity)
+
+        return company_entity
 
     def find_all_company(self):
         query = select(Company)

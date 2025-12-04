@@ -34,7 +34,7 @@ def _dup_key_on(err: IntegrityError, needle: str) -> bool:
 @router.post("/register", response_model=UserRead, status_code=201, summary="Search items (auth required)", dependencies=[swagger_bearer_auth()])
 def register(payload: UserCreate,
              request: Request, db: Session = Depends(get_db),
-             current: UserEntity = Depends(get_current_user)
+             # current: UserEntity = Depends(get_current_user)
              ):
     uc = AuthenticationUseCases(db)
 
