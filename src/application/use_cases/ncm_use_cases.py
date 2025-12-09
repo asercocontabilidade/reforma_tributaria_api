@@ -169,7 +169,28 @@ def _extract_anexo_token(sheet_name: str) -> str:
     return "-"
 
 def _extract_anexo_label(sheet_name: str) -> str:
-    token = _extract_anexo_token(sheet_name)
+    """
+    Retorna:
+      - "Anexo IX - Diferimento"
+      - "Anexo V - Isenção"
+      - "Anexo III" (se não houver sufixo)
+    """
+    raw = (sheet_name or "").strip()
+
+    # 1) Detecta o número (já funciona corretamente)
+    token = _extract_anexo_token(raw)
+
+    # 2) Extrai o texto após "Anexo X"
+    #    Ex: "Anexo IX - Diferimento" → resto = "Diferimento"
+    m = re.search(r"anexo\s*\w+\s*[-–—:]\s*(.+)$", raw, flags=re.IGNORECASE)
+    if m:
+        suffix = m.group(1).strip()
+        # Remove espaços duplicados
+        suffix = SPACE_RE.sub(" ", suffix)
+        if suffix:
+            return f"Anexo {token} - {suffix}"
+
+    # Sem sufixo → comportamento padrão
     return f"Anexo {token}" if token != "-" else "-"
 
 def _is_long_header_text(s: str) -> bool:
@@ -437,7 +458,7 @@ class ItemsCache:
         frames: List[pd.DataFrame] = []
         self._debug_sheets = {}
 
-        for raw_name, raw in sheets.items():
+        for raw_name, raw in sorted(sheets.items(), key=lambda x: x[0].lower()):
             name = str(raw_name).strip()
             upper_name = strip_accents(name).upper()
 

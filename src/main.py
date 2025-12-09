@@ -10,9 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 app = FastAPI(
     title="API App Reforma Tributária",
     version="0.1.0",
-    # docs_url=None,
-    # redoc_url=None,
-    # openapi_url=None
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None
 )
 
 origins = [
@@ -23,6 +23,7 @@ origins = [
     "http://192.168.1.65:5174",
     "http://192.168.1.113:3005",
     "http://localhost:5003",
+    "https://tributario.aserco.com.br",
     # adicione outros hosts que usar
 ]
 
