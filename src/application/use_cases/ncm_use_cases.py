@@ -107,13 +107,23 @@ def map_columns_to_canonical(columns: List[str]) -> dict:
     mapping = {}
     for col in columns:
         key = normalize_for_compare(col, True)
+
+        # ✅ NÃO mapear coluna com header vazio (evita cair em ITEM)
+        if not key:
+            continue
+
         if key in canon_norm_map:
             mapping[col] = canon_norm_map[key]
             continue
+
         for ckey, cname in canon_norm_map.items():
+            # ✅ também evita "match universal" por startswith quando key/ckey vazios
+            if not ckey:
+                continue
             if key == ckey or key.startswith(ckey) or ckey.startswith(key):
                 mapping[col] = cname
                 break
+
     return mapping
 
 def choose_engine(path: str) -> str:
@@ -311,45 +321,31 @@ class ItemsCache:
             if "DESCRIÇÃO DO PRODUTO" in out.columns:
                 out["DESCRIÇÃO DO PRODUTO"] = out["DESCRIÇÃO DO PRODUTO"].ffill()
 
-            # Propaga Base Legal em agrupamentos corretos
+            # 🔹 PROPAGA BASE LEGAL POR BLOCO JURÍDICO (robusto p/ células mescladas)
             if "DESCRIÇÃO COMPLETA" in out.columns:
-                if "ANEXO" in out.columns and "ITEM" in out.columns:
-                    item_series = out["ITEM"]
-                    # Para ANEXO Tributado (ITEM vazio)
-                    if item_series.isna().all():
-                        out["DESCRIÇÃO COMPLETA"] = (
-                            out.groupby("ANEXO")["DESCRIÇÃO COMPLETA"]
-                            .transform(lambda s: s.ffill().bfill())
-                        )
-                    else:
-                        out["DESCRIÇÃO COMPLETA"] = (
-                            out.groupby(["ANEXO", "ITEM"])["DESCRIÇÃO COMPLETA"]
-                            .transform(lambda s: s.ffill().bfill())
-                        )
-                else:
-                    out["DESCRIÇÃO COMPLETA"] = out["DESCRIÇÃO COMPLETA"].ffill().bfill()
+                # Detecta linhas âncora (onde começa um texto jurídico)
+                desc_series = out["DESCRIÇÃO COMPLETA"].astype(str).str.strip()
+
+                anchor_mask = desc_series.str.contains(LEGAL_TEXT_RE, na=False)
+
+                # Cria blocos cumulativos
+                block_id = anchor_mask.astype(int).cumsum()
+                out["__BLK"] = block_id
+
+                # Propaga a base legal dentro de cada bloco
+                out["DESCRIÇÃO COMPLETA"] = (
+                    out.groupby("__BLK")["DESCRIÇÃO COMPLETA"]
+                    .apply(lambda s: s.replace(r"^\s*$", pd.NA, regex=True).ffill())
+                    .fillna("")
+                    .values
+                )
+
+                # Remove coluna auxiliar
+                del out["__BLK"]
 
             # Preenche vazios restantes
             for c in out.columns:
                 out[c] = out[c].fillna("")
-
-            if "DESCRIÇÃO COMPLETA" in out.columns:
-                if "ANEXO" in out.columns and "ITEM" in out.columns:
-                    item_series = out["ITEM"]
-                    # Se ITEM está todo vazio (caso típico da aba Tributado),
-                    # agrupa só por ANEXO para propagar a base legal
-                    if item_series.isna().all():
-                        out["DESCRIÇÃO COMPLETA"] = (
-                            out.groupby("ANEXO")["DESCRIÇÃO COMPLETA"]
-                            .transform(lambda s: s.ffill().bfill())
-                        )
-                    else:
-                        out["DESCRIÇÃO COMPLETA"] = (
-                            out.groupby(["ANEXO", "ITEM"])["DESCRIÇÃO COMPLETA"]
-                            .transform(lambda s: s.ffill().bfill())
-                        )
-                else:
-                    out["DESCRIÇÃO COMPLETA"] = out["DESCRIÇÃO COMPLETA"].ffill().bfill()
 
             for c in out.columns:
                 out[c] = out[c].fillna("")
@@ -364,10 +360,35 @@ class ItemsCache:
                 out.loc[move_mask, "DESCRIÇÃO COMPLETA"] = item_s.loc[move_mask].values
                 out.loc[move_mask, "ITEM"] = ""
 
-            # 4.2) define âncora de bloco: linha com DESCRIÇÃO COMPLETA != "" e NCM == ""
-            descc_s = out.get("DESCRIÇÃO COMPLETA", pd.Series([""]*len(out))).astype(str).str.strip()
-            ncm_s   = out.get("NCM", pd.Series([""]*len(out))).astype(str).str.strip()
-            anchor_mask = (descc_s != "") & (ncm_s == "")
+            # 4.1.1) FIX EXCEÇÕES: algumas planilhas colocam a Base Legal em "CST IBS E CBS"
+            #         e um código (ex: 200013) em "DESCRIÇÃO COMPLETA".
+            #         Se detectar esse padrão, faz o swap:
+            if "CST IBS E CBS" in out.columns and "DESCRIÇÃO COMPLETA" in out.columns:
+                cst_s = out["CST IBS E CBS"].astype(str).str.strip()
+                desc_s = out["DESCRIÇÃO COMPLETA"].astype(str).str.strip()
+
+                # Heurística segura:
+                # - CST tem cara de texto jurídico ("Art", "§", "inciso"...)
+                # - DESCRIÇÃO COMPLETA tem cara de código numérico
+                looks_legal = cst_s.str.contains(LEGAL_TEXT_RE, na=False)
+                looks_code = desc_s.str.fullmatch(r"\d{4,}", na=False)
+
+                # Se houver evidência suficiente, faz swap linha a linha
+                if (looks_legal & looks_code).any():
+                    tmp = out["CST IBS E CBS"].copy()
+                    out["CST IBS E CBS"] = out["DESCRIÇÃO COMPLETA"]
+                    out["DESCRIÇÃO COMPLETA"] = tmp
+
+            # 4.2) define âncora de bloco:
+            #     - quando começa texto jurídico (Art..., §, inciso...)
+            #     - OU quando existe descrição completa e a linha é “âncora” sem NCM
+            descc_s = out.get("DESCRIÇÃO COMPLETA", pd.Series([""] * len(out))).astype(str).str.strip()
+            ncm_s = out.get("NCM", pd.Series([""] * len(out))).astype(str).str.strip()
+
+            anchor_mask = (
+                    descc_s.str.contains(LEGAL_TEXT_RE, na=False) |
+                    ((descc_s != "") & (ncm_s == ""))
+            )
 
             # 4.3) block_id por cumulativo de âncoras
             block_id = anchor_mask.astype(int).cumsum()
@@ -458,7 +479,8 @@ class ItemsCache:
         frames: List[pd.DataFrame] = []
         self._debug_sheets = {}
 
-        for raw_name, raw in sorted(sheets.items(), key=lambda x: x[0].lower()):
+        # Mantém a ordem das abas exatamente como no Excel
+        for raw_name, raw in sheets.items():
             name = str(raw_name).strip()
             upper_name = strip_accents(name).upper()
 
@@ -519,8 +541,12 @@ class ItemsCache:
             # ANEXO
             if "TRIBUT" in upper_name:
                 anexo_label = "Tributado"
+            elif "MONOF" in upper_name:
+                anexo_label = "MONOFÁSICO"
+            elif is_exceptions:
+                anexo_label = "Exceções"
             else:
-                anexo_label = "Exceções" if is_exceptions else _extract_anexo_label(name)
+                anexo_label = _extract_anexo_label(name)
             body["ANEXO"] = anexo_label
 
             # rastro opcional
