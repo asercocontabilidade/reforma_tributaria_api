@@ -44,3 +44,12 @@ class UserUseCases:
 
     def is_signed_contract(self, user_id, type_contract):
         return self.contract_repo.is_signed_contract(user_id, type_contract)
+
+    def get_ramdom_int_number_user_code(self):
+        return self.repo.get_user_code()
+
+    def validate_user_code(self, code):
+        return self.repo.validate_user_code(code)
+
+    def attach_user_code(self, user_id, code):
+        return self.repo.attach_user_code(user_id, code)

@@ -48,6 +48,14 @@ class User(Base):
         passive_deletes=True
     )
 
+    code: Mapped["Code"] = relationship(
+        "Code",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True
+    )
+
 @event.listens_for(User, "before_update")
 def update_status_changed_at(mapper, connection, target: User):
     """Atualiza status_changed_at apenas se o is_active for alterado."""

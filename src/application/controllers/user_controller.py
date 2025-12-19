@@ -13,6 +13,7 @@ from application.use_cases.security import (
 from domain.entities.user_classes import UserEntity
 from sqlalchemy.sql.functions import user
 from application.utils.utils import get_client_ip
+from sqlalchemy.testing import db
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -117,3 +118,31 @@ def is_signed_contract(
 ):
     use_case = UserUseCases(db)
     return use_case.is_signed_contract(user_id, type_contract)
+
+@router.get("/get_ramdom_int_number_user_code")
+def get_ramdom_int_number_user_code(
+        db: Session = Depends(get_db),
+        current: UserEntity = Depends(get_current_user),
+):
+    use_case = UserUseCases(db)
+    code = use_case.get_ramdom_int_number_user_code()
+    return {
+        "code": code
+    }
+
+@router.get("/validate_user_code/{code}")
+def validate_user_code(
+    code: str,
+    db: Session = Depends(get_db),
+):
+    use_case = UserUseCases(db)
+    return use_case.validate_user_code(code)
+
+@router.post("/attach_user_code/{user_id}/{code}")
+def attach_user_code(
+    user_id: int,
+    code: str,
+    db: Session = Depends(get_db),
+):
+    use_case = UserUseCases(db)
+    return use_case.attach_user_code(user_id, code)
